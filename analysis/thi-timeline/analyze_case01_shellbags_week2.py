@@ -78,6 +78,25 @@ def file_sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def repo_relative(path: Path) -> str:
+    """Portable repository-relative path; reject paths outside the repository."""
+    try:
+        return path.resolve().relative_to(ROOT).as_posix()
+    except ValueError as exc:
+        raise ValueError(f"Cannot write reproducible report for file outside repository: {path}") from exc
+
+
+def last_input_commit(path: Path) -> str:
+    """Commit that last changed the tracked input, NOT the commit containing the report."""
+    try:
+        return subprocess.check_output(
+            ["git", "log", "-1", "--format=%H", "--", repo_relative(path)],
+            cwd=ROOT, stderr=subprocess.DEVNULL, text=True, timeout=3,
+        ).strip() or "uncommitted"
+    except (OSError, subprocess.SubprocessError):
+        return "unavailable"
+
+
 def git_commit() -> str:
     try:
         return subprocess.check_output(
@@ -221,14 +240,21 @@ def main(argv: list[str] | None = None) -> int:
 
     by_type = Counter(r["timestamp_category"] for r in audited)
     generated_at = datetime.now(timezone.utc).isoformat()
-    cmd = "python analysis/thi-timeline/analyze_case01_shellbags_week2.py --overwrite"
+    cmd = ("python analysis/thi-timeline/analyze_case01_shellbags_week2.py "
+           f"--input {repo_relative(input_file)} --output-dir {repo_relative(output_dir)} "
+           f"--report {repo_relative(report)} --overwrite")
     lines = [
         "# CASE01 ShellBags – DFIR review (generated)", "",
         "> **Object-context audit only.** Not validated user-activity findings.", "",
         "## Reproducibility", "",
-        f"- Input CSV: `{input_file.as_posix()}`",
+        f"- Input CSV (repo-relative): `{repo_relative(input_file)}`",
         f"- Input SHA-256: `{file_sha256(input_file)}`",
-        f"- Git HEAD at run: `{git_commit()}`",
+        f"- Input last committed revision: `{last_input_commit(input_file)}`",
+        f"- Generator script (repo-relative): `{repo_relative(Path(__file__))}`",
+        f"- Generator script SHA-256: `{file_sha256(Path(__file__))}`",
+        f"- Git HEAD at generation (not necessarily the report's commit): `{git_commit()}`",
+        "- Note: the Git commit containing this report is created **after** generation; "
+        "source revision and SHA-256 hashes are reproducibility anchors.",
         f"- Generated UTC: `{generated_at}`",
         f"- Suggested command (from repo root): `{cmd}`",
         "- Input supports pre-schema-v2 fields. `case_id=CASE01` is inferred from valid event IDs when absent.",

@@ -29,6 +29,25 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def repo_relative(path: Path) -> str:
+    """Portable repository-relative path; reject paths outside the repository."""
+    try:
+        return path.resolve().relative_to(ROOT).as_posix()
+    except ValueError as exc:
+        raise ValueError(f"Cannot write reproducible report for file outside repository: {path}") from exc
+
+
+def last_input_commit(path: Path) -> str:
+    """Commit that last changed the tracked input, NOT the commit containing the report."""
+    try:
+        return subprocess.check_output(
+            ["git", "log", "-1", "--format=%H", "--", repo_relative(path)],
+            cwd=ROOT, stderr=subprocess.DEVNULL, text=True, timeout=3,
+        ).strip() or "uncommitted"
+    except (OSError, subprocess.SubprocessError):
+        return "unavailable"
+
+
 def git_commit() -> str:
     try:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT,
@@ -58,6 +77,48 @@ def read_csv(path: Path) -> list[dict]:
 def canonical_path(path: str) -> str:
     # Text equality only; does not equate UNC and mapped drives.
     return (path or "").replace("/", "\\").rstrip("\\").casefold()
+
+
+def validate_candidate_snapshot(row: dict, number: int, a_src: dict, b_src: dict,
+                                ta: datetime, tb: datetime) -> None:
+    """Check every stored first-pass field against the original CASE01 events CSV.
+
+    Only R01 (<=5 minutes) and R02 (identical full path) are supported by this
+    historical ShellBags-only review. Other rules require a new engine run.
+    Do not silently rewrite archived evidence data.
+    """
+    for side, src, actual in (("a", a_src, ta), ("b", b_src, tb)):
+        src_time = parse_utc(src.get("timestamp") or src.get("timestamp_utc") or "", number,
+                             f"source timestamp {side}")
+        if actual != src_time:
+            raise ValueError(f"time_{side} does not match source event: {actual.isoformat()} vs {src_time.isoformat()}")
+        desc = (src.get("timestamp_desc") or "").strip()
+        if (row.get(f"timestamp_desc_{side}") or "").strip() != desc:
+            raise ValueError(f"timestamp_desc_{side} does not match source: {row.get(f'timestamp_desc_{side}')!r} vs {desc!r}")
+
+    p = canonical_path(row.get("target_path") or "")
+    p_a = canonical_path(a_src.get("target_path") or "")
+    p_b = canonical_path(b_src.get("target_path") or "")
+    if not p or p != p_a or p != p_b:
+        raise ValueError("target_path differs from one or both source events (possible schema/UNC version mismatch)")
+
+    delta_minutes = round(abs((ta - tb).total_seconds()) / 60.0, 2)
+    try:
+        stored_delta = float(row.get("delta_minutes") or "")
+    except ValueError as exc:
+        raise ValueError("invalid or missing delta_minutes") from exc
+    if abs(stored_delta - delta_minutes) > 1e-8:
+        raise ValueError(f"delta_minutes mismatch: stored={stored_delta}, recomputed={delta_minutes}")
+
+    rule_tokens = [token.strip().upper() for token in (row.get("matched_rules") or "").split(",")]
+    rules = set(rule_tokens)
+    if "" in rules or len(rules) != len(rule_tokens) or not rules.issubset({"R01", "R02"}):
+        raise ValueError(f"unsupported, duplicated, or malformed matched_rules: {row.get('matched_rules')!r}")
+    expected = {"R02"}
+    if delta_minutes <= 5.0:
+        expected.add("R01")
+    if rules != expected or rules != {"R01", "R02"}:
+        raise ValueError(f"matched_rules mismatch: stored={sorted(rules)}, expected={sorted(expected)}")
 
 
 def source_index(event_csv: Path) -> dict[str, tuple[int, dict]]:
@@ -126,6 +187,9 @@ def main(argv: list[str] | None = None) -> int:
                     raise ValueError("missing target_path")
                 a_rec, a_src = source[a_id]
                 b_rec, b_src = source[b_id]
+                if a_id == b_id:
+                    raise ValueError("candidate pairs the same event with itself")
+                validate_candidate_snapshot(row, i, a_src, b_src, ta, tb)
                 enriched.append({
                     **row, "case_id": "CASE01", "timestamp_timezone": "UTC",
                     "review_csv_record": i, "event_a_source_csv_record": a_rec,
@@ -180,13 +244,22 @@ def main(argv: list[str] | None = None) -> int:
             "# CASE01 – Correlation candidate first-pass review (generated)", "",
             "> This document reviews candidate *pairs*. It is not validation of user actions or correlation precision.", "",
             "## Data lineage and reproducibility", "",
-            f"- Candidate input: `{review_path.as_posix()}`",
+            f"- Candidate input (repo-relative): `{repo_relative(review_path)}`",
             f"- Candidate SHA-256: `{sha256(review_path)}`",
-            f"- Source events: `{events_path.as_posix()}`",
+            f"- Candidate input last committed revision: `{last_input_commit(review_path)}`",
+            f"- Source events (repo-relative): `{repo_relative(events_path)}`",
             f"- Events SHA-256: `{sha256(events_path)}`",
-            f"- Git HEAD: `{git_commit()}`",
+            f"- Source events last committed revision: `{last_input_commit(events_path)}`",
+            f"- Generator script (repo-relative): `{repo_relative(Path(__file__))}`",
+            f"- Generator script SHA-256: `{sha256(Path(__file__))}`",
+            f"- Git HEAD at generation (not necessarily the report's commit): `{git_commit()}`",
+            "- Note: the report commit is created after generation; input revisions and SHA-256 hashes pin exact data and code.",
             f"- Generated UTC: `{datetime.now(timezone.utc).isoformat()}`",
-            "- Regenerate (repo root): `python analysis/thi-timeline/generate_case01_correlation_review.py --overwrite`",
+            "- Regenerate (repo root): `python analysis/thi-timeline/generate_case01_correlation_review.py "
+            f"--review-csv {repo_relative(review_path)} --events-csv {repo_relative(events_path)} "
+            f"--report {repo_relative(report_path)} --enriched-csv {repo_relative(output_path)} --overwrite`",
+            "- Validation: timestamps, descriptions, full path, delta_minutes, R01/R02 reconstructed from source CSV.",
+            "- This baseline refers to the pre-PR #9 source representation; do not validate against newer normalized paths silently.",
             "- Candidate case inferred from `CASE01-SB...` identifiers; source-record numbers refer to logical CSV rows, not original forensic hive offsets.",
             "- `+00:00` timestamps are parsed as timezone-aware UTC. Timezone of original evidence must be verified separately.",
             "", "## Statistics calculated from candidate input", "",
