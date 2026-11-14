@@ -4,13 +4,20 @@
 
 ## Data lineage and reproducibility
 
-- Candidate input: `D:/doan/NT334_WinTrace/results/case01_candidates_review.csv`
+- Candidate input (repo-relative): `results/case01_candidates_review.csv`
 - Candidate SHA-256: `1c3771648771593202484f00f435838940fed365dd132b72d9a9db1f1bb38131`
-- Source events: `D:/doan/NT334_WinTrace/results/case01_shellbags_events.csv`
+- Candidate input last committed revision: `65953a5d7db1ceb04f3956c8753be959a6743518`
+- Source events (repo-relative): `results/case01_shellbags_events.csv`
 - Events SHA-256: `afb9f3e90b84f83a4db0858d5fe7548bee0e5a4d528ed29550fc8661ae65ce58`
-- Git HEAD: `606fcf81a1e781c1d9eccae0881639fda6d0517b`
-- Generated UTC: `2026-11-14T11:59:53.988876+00:00`
-- Regenerate (repo root): `python analysis/thi-timeline/generate_case01_correlation_review.py --overwrite`
+- Source events last committed revision: `b625ecd6d3ba065f04daa8ccdc6078b616f76c4c`
+- Generator script (repo-relative): `analysis/thi-timeline/generate_case01_correlation_review.py`
+- Generator script SHA-256: `0255f41ae55790b541112221e008499c738f3c5bb635eb61744833655f182dbb`
+- Git HEAD at generation (not necessarily the report's commit): `e32de01ae119aa863c2a15773eda8cab01a0135b`
+- Note: the report commit is created after generation; input revisions and SHA-256 hashes pin exact data and code.
+- Generated UTC: `2026-11-14T16:30:24.193360+00:00`
+- Regenerate (repo root): `python analysis/thi-timeline/generate_case01_correlation_review.py --review-csv results/case01_candidates_review.csv --events-csv results/case01_shellbags_events.csv --report analysis/thi-timeline/case01_correlation_review_week2_v2.md --enriched-csv results/case01_review_v2/case01_candidates_review_enriched.csv --overwrite`
+- Validation: timestamps, descriptions, full path, delta_minutes, R01/R02 reconstructed from source CSV.
+- This baseline refers to the pre-PR #9 source representation; do not validate against newer normalized paths silently.
 - Candidate case inferred from `CASE01-SB...` identifiers; source-record numbers refer to logical CSV rows, not original forensic hive offsets.
 - `+00:00` timestamps are parsed as timezone-aware UTC. Timezone of original evidence must be verified separately.
 

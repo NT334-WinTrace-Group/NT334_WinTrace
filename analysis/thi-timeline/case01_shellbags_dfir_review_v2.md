@@ -4,11 +4,15 @@
 
 ## Reproducibility
 
-- Input CSV: `D:/doan/NT334_WinTrace/results/case01_shellbags_events.csv`
+- Input CSV (repo-relative): `results/case01_shellbags_events.csv`
 - Input SHA-256: `afb9f3e90b84f83a4db0858d5fe7548bee0e5a4d528ed29550fc8661ae65ce58`
-- Git HEAD at run: `606fcf81a1e781c1d9eccae0881639fda6d0517b`
-- Generated UTC: `2026-11-14T11:59:41.555277+00:00`
-- Suggested command (from repo root): `python analysis/thi-timeline/analyze_case01_shellbags_week2.py --overwrite`
+- Input last committed revision: `b625ecd6d3ba065f04daa8ccdc6078b616f76c4c`
+- Generator script (repo-relative): `analysis/thi-timeline/analyze_case01_shellbags_week2.py`
+- Generator script SHA-256: `304a14b591807c77c6dbf59a013d7fcee120169adc9ef24fdcf3d90e8572d9ed`
+- Git HEAD at generation (not necessarily the report's commit): `e32de01ae119aa863c2a15773eda8cab01a0135b`
+- Note: the Git commit containing this report is created **after** generation; source revision and SHA-256 hashes are reproducibility anchors.
+- Generated UTC: `2026-11-14T16:30:16.063098+00:00`
+- Suggested command (from repo root): `python analysis/thi-timeline/analyze_case01_shellbags_week2.py --input results/case01_shellbags_events.csv --output-dir results/case01_review_v2 --report analysis/thi-timeline/case01_shellbags_dfir_review_v2.md --overwrite`
 - Input supports pre-schema-v2 fields. `case_id=CASE01` is inferred from valid event IDs when absent.
 - `source_csv_record` is a *logical CSV record number*, not evidence hive offset or physical line number.
 
