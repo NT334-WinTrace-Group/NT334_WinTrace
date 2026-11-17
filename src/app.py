@@ -36,7 +36,7 @@ def load_findings(json_path: str):
         if not path.exists():
             return []
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f) # Trả về list of dicts an toàn
+            return json.load(f)
     except Exception as e:
         st.error(f"Error loading findings: {e}")
         return []

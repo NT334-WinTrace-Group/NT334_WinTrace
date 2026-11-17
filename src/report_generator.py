@@ -1,5 +1,5 @@
 """
-WinTrace - Report Generation Module (Fixed for Dicts)
+WinTrace - Report Generation Module
 Author: Quyen (Validation & Visualization Engineer)
 """
 
