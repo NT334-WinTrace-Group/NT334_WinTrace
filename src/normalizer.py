@@ -39,6 +39,16 @@ SHELLBAGS_TIMESTAMP_DESC_MAP = {
     "ShellItem_FolderAccessed": "ShellItem Target Accessed",
 }
 
+PROVENANCE_FIELDS = ("timestamp_type", "evidence_reference", "validation_status", "case_id")
+
+
+def _read_provenance(row: Dict[str, str], extra_attributes: Dict[str, Any]) -> Dict[str, Any]:
+    return {field: row.get(field) or extra_attributes.get(field) for field in PROVENANCE_FIELDS}
+
+
+def _legacy_case_id(event_id: str) -> Optional[str]:
+    return "CASE01" if event_id.startswith("CASE01-") else None
+
 
 class PlasoNormalizer:
     """Normalizes raw Plaso records into unified forensic events."""
@@ -157,11 +167,6 @@ class PlasoNormalizer:
         dt = parse_iso_utc(raw_time)
         iso_timestamp = dt.isoformat()
 
-        timestamp_desc = (
-            raw_row.get("timestamp_desc")
-            or raw_row.get("timestamp_type")
-            or "Unknown"
-        )
         parser = raw_row.get("parser", "generic")
         source = raw_row.get("source", "")
         source_long = raw_row.get("source_long", "")
@@ -189,12 +194,23 @@ class PlasoNormalizer:
                 raise ValueError("extra_attributes must contain a JSON object")
             extra_attrs = {**parsed_extra, **extra_attrs}
             
-        for field in ("timestamp_type", "evidence_reference", "validation_status"):
+        provenance = _read_provenance(raw_row, extra_attrs)
+        for field in PROVENANCE_FIELDS:
             if raw_row.get(field):
                 extra_attrs.setdefault(field, raw_row[field])
 
-        timestamp_type = cls.map_timestamp_type(timestamp_desc, artifact_source)
-        evidence_reference = f"plaso:{parser} | display_name={display_name}" if display_name else None
+        timestamp_type = provenance["timestamp_type"]
+        timestamp_desc = (
+            raw_row.get("timestamp_desc")
+            or SHELLBAGS_TIMESTAMP_DESC_MAP.get(timestamp_type)
+            or timestamp_type
+            or "Unknown"
+        )
+        provenance["timestamp_type"] = timestamp_type or cls.map_timestamp_type(timestamp_desc, artifact_source)
+        if not provenance["evidence_reference"] and display_name:
+            provenance["evidence_reference"] = f"plaso:{parser} | display_name={display_name}"
+        provenance["validation_status"] = provenance["validation_status"] or "unverified"
+        provenance["case_id"] = provenance["case_id"] or case_id or _legacy_case_id(event_id)
 
         confidence_level = (
             raw_row.get("confidence_level")
@@ -216,15 +232,12 @@ class PlasoNormalizer:
             username=username,
             confidence_level=confidence_level,
             extra_attributes=extra_attrs,
-            timestamp_type=timestamp_type,
-            evidence_reference=evidence_reference,
-            validation_status="unverified",
-            case_id=case_id,
+            **provenance,
         )
 
     @classmethod
     def normalize_file_with_report(
-        cls, input_path: str, source_label: Optional[str] = None
+        cls, input_path: str, source_label: Optional[str] = None, *, case_id: Optional[str] = None
     ) -> Tuple[List[ForensicEvent], List[Dict[str, Any]]]:
         path = Path(input_path)
         if not path.exists():
@@ -238,7 +251,7 @@ class PlasoNormalizer:
             idx = 1
             for row in reader:
                 try:
-                    event = cls.normalize_record(row, idx, case_id=source_label)
+                    event = cls.normalize_record(row, idx, case_id=case_id)
                     if source_label:
                         event.extra_attributes.setdefault("source_label", source_label)
                     events.append(event)
@@ -252,7 +265,7 @@ class PlasoNormalizer:
 
     @classmethod
     def normalize_file(cls, input_path: str, case_id: Optional[str] = None) -> List[ForensicEvent]:
-        events, _ = cls.normalize_file_with_report(input_path, source_label=case_id)
+        events, _ = cls.normalize_file_with_report(input_path, case_id=case_id)
         return events
 
 
@@ -286,42 +299,39 @@ class ShellBagsNormalizer:
     def _normalize_row(cls, row: Dict[str, str]) -> ForensicEvent:
         extra_raw = row.get("extra_attributes", "")
         extra_dict: Dict[str, Any] = {}
-        timestamp_type = None
-        evidence_reference = None
-        validation_status = None
 
         if extra_raw and extra_raw.strip():
             try:
-                extra_dict = json.loads(extra_raw)
-                timestamp_type = extra_dict.pop("timestamp_type", None)
-                evidence_reference = extra_dict.pop("evidence_reference", None)
-                validation_status = extra_dict.pop("validation_status", None)
+                parsed_extra = json.loads(extra_raw)
+                if isinstance(parsed_extra, dict):
+                    extra_dict = parsed_extra
             except json.JSONDecodeError:
                 pass
 
+        provenance = _read_provenance(row, extra_dict)
+        for field in PROVENANCE_FIELDS:
+            extra_dict.pop(field, None)
         event_id = row.get("event_id", "")
-        case_id = "CASE01" if event_id.startswith("CASE01") else None
+        provenance["case_id"] = provenance["case_id"] or _legacy_case_id(event_id)
 
-        raw_time = row.get("timestamp", "")
+        raw_time = row.get("timestamp") or row.get("timestamp_utc") or ""
         dt = parse_iso_utc(raw_time)
         iso_timestamp = dt.isoformat()
 
         return ForensicEvent(
             event_id=event_id,
             timestamp=iso_timestamp,
-            timestamp_desc=row.get("timestamp_desc", "Unknown"),
-            artifact_source=row.get("artifact_source", "ShellBags"),
+            timestamp_desc=(row.get("timestamp_desc")
+                            or SHELLBAGS_TIMESTAMP_DESC_MAP.get(provenance["timestamp_type"], "Unknown")),
+            artifact_source=row.get("artifact_source") or row.get("artifact_type") or "ShellBags",
             source_file=row.get("source_file", ""),
-            target_path=row.get("target_path", ""),
-            message=row.get("message", ""),
+            target_path=row.get("target_path") or row.get("object_path") or "",
+            message=row.get("message") or row.get("description") or "",
             data_type=row.get("data_type", "windows:registry:bagmru"),
             parser=row.get("parser", "sbecmd"),
             user_sid=row.get("user_sid") or None,
             username=row.get("username") or None,
-            confidence_level=row.get("confidence_level", "MEDIUM"),
+            confidence_level=(row.get("confidence_level") or row.get("confidence") or "MEDIUM").upper(),
             extra_attributes=extra_dict,
-            timestamp_type=timestamp_type,
-            evidence_reference=evidence_reference,
-            validation_status=validation_status,
-            case_id=case_id,
+            **provenance,
         )

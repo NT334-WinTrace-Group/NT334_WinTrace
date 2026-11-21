@@ -93,6 +93,7 @@ def main():
                     st.markdown(f"**Timestamp:** `{evt.timestamp}` ({evt.timestamp_type})")
                     st.markdown(f"**Artifact:** `{evt.artifact_source}`")
                     st.markdown(f"**Source File:** `{evt.source_file}`")
+                    st.markdown(f"**Case ID:** `{evt.case_id or 'Unspecified'}`")
                 with col2:
                     st.markdown(f"**Message:** {evt.message}")
                     st.markdown(f"**Target Path:** `{evt.target_path}`")

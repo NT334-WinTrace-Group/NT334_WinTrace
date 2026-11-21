@@ -87,6 +87,8 @@ def normalize_windows_path(path_str: Optional[str]) -> str:
     # Replace forward slashes with backslashes
     cleaned = cleaned.replace('/', '\\')
     # Remove redundant backslashes
+    if cleaned.startswith("\\\\"):
+        return "\\\\" + re.sub(r'\\+', r'\\', cleaned.lstrip("\\"))
     cleaned = re.sub(r'\\+', r'\\', cleaned)
     return cleaned
 

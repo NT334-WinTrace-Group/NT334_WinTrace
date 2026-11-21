@@ -9,17 +9,15 @@ Changelog (Week 2):
 - Added timestamp_type-aware window adjustment
 """
 
-from datetime import datetime, timezone
 from itertools import combinations
 from pathlib import PureWindowsPath
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional
 import csv
 import json
 
 from src.schema import (
     ForensicEvent,
     CorrelationFinding,
-    parse_iso_utc,
     normalize_windows_path,
     extract_drive_path_from_bagmru,
 )
@@ -45,9 +43,7 @@ def _extract_comparable_path(path: str) -> str:
     """Extract a filesystem-comparable path, handling BagMRU paths if needed."""
     if _is_bagmru_path(path):
         drive, relative = extract_drive_path_from_bagmru(path)
-        if drive:
-            return f"{drive}\\{relative}" if relative else drive
-        return relative  # fallback to relative path without drive
+        return f"{drive}\\{relative}" if drive else ""
     return path
 
 
@@ -55,7 +51,7 @@ def path_relation(path1: str, path2: str) -> Optional[str]:
     """
     Evaluate the relationship between two Windows paths.
     Handles both standard Windows paths and BagMRU paths.
-    Returns: 'Same path', 'Parent-child path', 'Same filename', or None.
+    Returns: 'Same path', 'Parent-child path', or None.
     """
     if not path1 or not path2:
         return None
@@ -67,15 +63,14 @@ def path_relation(path1: str, path2: str) -> Optional[str]:
     if not comparable1 or not comparable2:
         return None
 
-    # Handle cases where path is just a filename
     p1 = PureWindowsPath(normalize_windows_path(comparable1))
     p2 = PureWindowsPath(normalize_windows_path(comparable2))
 
+    if not p1.is_absolute() or not p2.is_absolute() or ".." in p1.parts or ".." in p2.parts:
+        return None
+
     a = tuple(p.casefold() for p in p1.parts)
     b = tuple(p.casefold() for p in p2.parts)
-
-    if not a or not b:
-        return None
 
     if a == b:
         return "Same path"
@@ -86,15 +81,12 @@ def path_relation(path1: str, path2: str) -> Optional[str]:
     if len(b) < len(a) and a[:len(b)] == b:
         return "Parent-child path"
 
-    # Check if target file name matches the end of path
-    if len(a) > 0 and len(b) > 0 and a[-1] == b[-1]:
-        return "Same filename"
-
     return None
 
 
-def is_program_file_pair(event_prog: ForensicEvent, event_file: ForensicEvent) -> bool:
-    """Check if event_prog is an execution event and event_file is a file interaction event."""
+def is_program_file_pair(event_prog: ForensicEvent, event_file: ForensicEvent,
+                         *, require_reference: bool = False) -> bool:
+    """Identify program/file candidates, optionally requiring a direct file reference."""
     prog_artifacts = {"Prefetch", "Amcache", "EVTX"}
     file_artifacts = {"LNK", "ShellBags", "RecycleBin", "NTFS_MFT", "JumpLists"}
 
@@ -111,11 +103,14 @@ def is_program_file_pair(event_prog: ForensicEvent, event_file: ForensicEvent) -
     if not (is_prog and is_file):
         return False
 
-    # Check if prefetch references the file in extra_attributes
     referenced_files = event_prog.extra_attributes.get("referenced_files", [])
-    for ref in referenced_files:
-        if path_relation(ref, event_file.target_path):
-            return True
+    if isinstance(referenced_files, (list, tuple)) and any(
+        isinstance(ref, str) and path_relation(ref, event_file.target_path) == "Same path"
+        for ref in referenced_files
+    ):
+        return True
+    if require_reference:
+        return False
 
     # General association if time is close and program can open that document
     exec_name = PureWindowsPath(event_prog.target_path).name.lower()
@@ -129,6 +124,33 @@ def is_program_file_pair(event_prog: ForensicEvent, event_file: ForensicEvent) -
     if "notepad" in exec_name and doc_ext in {".txt", ".log", ".ini"}:
         return True
 
+    return False
+
+
+def _matches_timestamp(event: ForensicEvent, types: set[str], legacy_descs: set[str]) -> bool:
+    """Use the typed timestamp when available and support legacy event rows."""
+    if event.timestamp_type and event.timestamp_type != "Generic":
+        return event.timestamp_type in types
+    return event.timestamp_desc.strip().casefold() in legacy_descs
+
+
+def _is_deletion_timestamp(event: ForensicEvent) -> bool:
+    return event.artifact_source == "RecycleBin" and _matches_timestamp(
+        event, {"RecycleBin_DeletionTime"}, {"deletion timestamp", "file deletion time"}
+    )
+
+
+def _is_interaction_timestamp(event: ForensicEvent) -> bool:
+    if event.artifact_source == "LNK":
+        return _matches_timestamp(
+            event, {"LNK_TargetAccessed"},
+            {"lnk target accessed", "lnk target file accessed", "file last access time"},
+        )
+    if event.artifact_source == "ShellBags":
+        return _matches_timestamp(
+            event, {"ShellBag_FirstInteracted", "ShellBag_LastInteracted"},
+            {"bagmru first interacted", "bagmru last interacted", "last time visited"},
+        )
     return False
 
 
@@ -187,28 +209,34 @@ class CorrelationEngine:
                 score += 30
                 explanations.append(f"Target object relationship: {relation}")
 
+            direct_file_reference = (
+                is_program_file_pair(event_a, event_b, require_reference=True)
+                or is_program_file_pair(event_b, event_a, require_reference=True)
+            )
+
             # Rule R03: Cross-Artifact Support
-            if event_a.artifact_source != event_b.artifact_source and (delta_minutes <= effective_window or relation):
+            if event_a.artifact_source != event_b.artifact_source and (relation or direct_file_reference):
                 matched_rules.append("R03")
                 score += 30
-                explanations.append(f"Corroborated across distinct sources: {event_a.artifact_source} <-> {event_b.artifact_source}")
+                link = relation or "explicit file reference"
+                explanations.append(f"Cross-artifact link ({link}): {event_a.artifact_source} <-> {event_b.artifact_source}")
 
             # Rule R04: Program-File Association
-            if is_program_file_pair(event_a, event_b) or is_program_file_pair(event_b, event_a):
-                if delta_minutes <= effective_window or relation:
-                    matched_rules.append("R04")
-                    score += 20
-                    explanations.append("Execution artifact directly correlates with document interaction")
+            if direct_file_reference and delta_minutes <= effective_window:
+                matched_rules.append("R04")
+                score += 20
+                explanations.append("Program artifact references the file path within the time window")
 
             # Rule R05: Deletion Context
-            is_deletion = (
-                event_a.artifact_source == "RecycleBin" or "delete" in event_a.message.lower() or
-                event_b.artifact_source == "RecycleBin" or "delete" in event_b.message.lower()
-            )
-            if is_deletion and (relation or delta_minutes <= (effective_window * 2)):
+            if (
+                relation == "Same path"
+                and event_a.dt < event_b.dt
+                and _is_interaction_timestamp(event_a)
+                and _is_deletion_timestamp(event_b)
+            ):
                 matched_rules.append("R05")
                 score += 20
-                explanations.append("Prior user/application interaction precedes file deletion activity")
+                explanations.append("Recorded access or navigation timestamp predates the Recycle Bin deletion timestamp for the same path")
 
             # Bonus: User attribution match
             if event_a.username and event_b.username and event_a.username.lower() == event_b.username.lower():
