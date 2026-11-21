@@ -78,13 +78,16 @@ class TimelineStore:
             "target": "target_path",
             "username": "username",
             "validation": "validation_status",
+            "case": "case_id",
         }
         for name, column in indexes.items():
             self.connection.execute(f"CREATE INDEX IF NOT EXISTS idx_events_{name} ON events({column})")
 
     @staticmethod
     def fingerprint(event: ForensicEvent) -> str:
+        case_id = event.case_id or event.extra_attributes.get("case_id") or ""
         values = (
+            event.event_id, case_id,
             event.timestamp, event.timestamp_desc, event.artifact_source,
             event.source_file, event.target_path, event.message, event.data_type,
             event.parser, event.user_sid or "", event.username or "",
@@ -152,6 +155,7 @@ class TimelineStore:
         end: Optional[datetime] = None,
         artifact: Optional[str] = None,
         keyword: Optional[str] = None,
+        case_id: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> List[ForensicEvent]:
         clauses: List[str] = []
@@ -169,6 +173,9 @@ class TimelineStore:
             clauses.append("(lower(target_path) LIKE lower(?) OR lower(message) LIKE lower(?))")
             pattern = f"%{keyword}%"
             parameters.extend([pattern, pattern])
+        if case_id:
+            clauses.append("lower(case_id) = lower(?)")
+            parameters.append(case_id)
         sql = "SELECT * FROM events"
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)

@@ -274,12 +274,17 @@ class ShellBagsNormalizer:
 
     @classmethod
     def normalize_file(cls, input_path: str) -> List[ForensicEvent]:
+        events, _ = cls.normalize_file_with_report(input_path)
+        return events
+
+    @classmethod
+    def normalize_file_with_report(cls, input_path: str) -> Tuple[List[ForensicEvent], List[Dict[str, Any]]]:
         path = Path(input_path)
         if not path.exists():
             raise FileNotFoundError(f"ShellBags CSV not found: {input_path}")
 
         events: List[ForensicEvent] = []
-        skipped = 0
+        errors: List[Dict[str, Any]] = []
 
         with open(path, "r", encoding="utf-8", newline="") as f:
             reader = csv.DictReader(f)
@@ -288,12 +293,11 @@ class ShellBagsNormalizer:
                     event = cls._normalize_row(row)
                     events.append(event)
                 except Exception as e:
-                    skipped += 1
-                    print(f"Warning: Skipping ShellBags line {line_no}: {e}")
+                    errors.append({"record": line_no, "error": str(e), "row": dict(row)})
 
-        if skipped > 0:
-            print(f"Total skipped ShellBags records: {skipped}")
-        return events
+        if errors:
+            print(f"Total skipped ShellBags records: {len(errors)}")
+        return events, errors
 
     @classmethod
     def _normalize_row(cls, row: Dict[str, str]) -> ForensicEvent:

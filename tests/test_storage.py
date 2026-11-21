@@ -24,12 +24,12 @@ def make_event(event_id="E01", timestamp="2026-10-25T02:10:00+00:00"):
 def test_storage_deduplicates_and_preserves_provenance(tmp_path):
     database = tmp_path / "timeline.db"
     with TimelineStore(str(database)) as store:
-        assert store.insert_events([make_event(), make_event("E02")]) == 1
-        assert store.count() == 1
+        assert store.insert_events([make_event(), make_event("E02")]) == 2
+        assert store.count() == 2
         events = store.query(artifact="evtx", keyword="report")
 
-    assert len(events) == 1
-    assert events[0].extra_attributes["evidence_reference"] == "Security.evtx:1"
+    assert len(events) == 2
+    assert all(event.extra_attributes["evidence_reference"] == "Security.evtx:1" for event in events)
 
 
 def test_storage_rejects_non_positive_limit(tmp_path):
@@ -113,6 +113,8 @@ def test_storage_migrates_legacy_database_and_recovers_provenance_on_reimport(tm
         with connection:
             if "validation_status" in legacy_columns:
                 connection.execute("DROP INDEX idx_events_validation")
+            if "case_id" in legacy_columns:
+                connection.execute("DROP INDEX idx_events_case")
             for column in legacy_columns:
                 connection.execute(f"ALTER TABLE events DROP COLUMN {column}")
     finally:
