@@ -29,6 +29,7 @@ class TimelineStore:
         with self.connection:
             self.connection.execute("BEGIN IMMEDIATE")
             self._initialize_schema()
+            self._migrate_fingerprints()
 
     def _initialize_schema(self) -> None:
         self.connection.execute("""
@@ -96,11 +97,66 @@ class TimelineStore:
         )
         return hashlib.sha256("\x1f".join(values).encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def legacy_fingerprint(event: ForensicEvent) -> str:
+        """Fingerprint format used before event_id/case_id were added."""
+        values = (
+            event.timestamp, event.timestamp_desc, event.artifact_source,
+            event.source_file, event.target_path, event.message, event.data_type,
+            event.parser, event.user_sid or "", event.username or "",
+            event.confidence_level,
+            json.dumps(event.extra_attributes, ensure_ascii=False, sort_keys=True),
+        )
+        return hashlib.sha256("\x1f".join(values).encode("utf-8")).hexdigest()
+
+    def _migrate_fingerprints(self) -> None:
+        rows = self.connection.execute("""
+            SELECT id, fingerprint, event_id, timestamp, timestamp_desc,
+                   artifact_source, source_file, target_path, message,
+                   data_type, parser, user_sid, username, confidence_level,
+                   timestamp_type, evidence_reference, validation_status,
+                   case_id, extra_attributes
+            FROM events
+        """).fetchall()
+
+        for row in rows:
+            data = dict(row)
+            stored_fingerprint = data.pop("fingerprint")
+            data.pop("id")
+            extra_attributes = json.loads(data.pop("extra_attributes") or "{}")
+            data["extra_attributes"] = extra_attributes
+            event = ForensicEvent.from_dict(data)
+            legacy_fingerprint = self.legacy_fingerprint(event)
+            if stored_fingerprint != legacy_fingerprint:
+                continue
+
+            new_fingerprint = self.fingerprint(event)
+            collision = self.connection.execute(
+                "SELECT 1 FROM events WHERE fingerprint = ? AND fingerprint != ?",
+                (new_fingerprint, stored_fingerprint),
+            ).fetchone()
+            if collision is None:
+                self.connection.execute(
+                    "UPDATE events SET fingerprint = ? WHERE id = ?",
+                    (new_fingerprint, row["id"]),
+                )
+
     def insert_events(self, events: Iterable[ForensicEvent]) -> int:
         rows = []
         provenance_rows = []
         for event in events:
             fingerprint = self.fingerprint(event)
+            legacy_fingerprint = self.legacy_fingerprint(event)
+            if legacy_fingerprint != fingerprint:
+                collision = self.connection.execute(
+                    "SELECT 1 FROM events WHERE fingerprint = ?",
+                    (fingerprint,),
+                ).fetchone()
+                if collision is None:
+                    self.connection.execute(
+                        "UPDATE events SET fingerprint = ? WHERE fingerprint = ?",
+                        (fingerprint, legacy_fingerprint),
+                    )
             provenance = {
                 field: getattr(event, field)
                 for field in PROVENANCE_FIELDS

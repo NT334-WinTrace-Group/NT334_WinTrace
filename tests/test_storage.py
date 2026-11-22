@@ -38,6 +38,56 @@ def test_storage_rejects_non_positive_limit(tmp_path):
             store.query(limit=0)
 
 
+def test_storage_migrates_legacy_fingerprint_on_reimport(tmp_path):
+    database = tmp_path / "timeline.db"
+    event = make_event("CASE01-SB0001")
+    event.extra_attributes = {
+        "timestamp_type": "EVTX_EventGenerated",
+        "evidence_reference": "Security.evtx:1",
+        "validation_status": "verified",
+        "case_id": "CASE01",
+    }
+    event.timestamp_type = "EVTX_EventGenerated"
+    event.evidence_reference = "Security.evtx:1"
+    event.validation_status = "verified"
+    event.case_id = "CASE01"
+
+    with TimelineStore(str(database)) as store:
+        assert store.insert_events([event]) == 1
+        old_fingerprint = store.legacy_fingerprint(event)
+        store.connection.execute(
+            "UPDATE events SET fingerprint = ?",
+            (old_fingerprint,),
+        )
+        store.connection.commit()
+        before = store.count()
+        assert store.fingerprint(event) != old_fingerprint
+
+    with TimelineStore(str(database)) as store:
+        migrated_row = store.connection.execute(
+            "SELECT fingerprint FROM events"
+        ).fetchone()
+        assert migrated_row["fingerprint"] == store.fingerprint(event)
+        inserted = store.insert_events([event])
+        after = store.count()
+
+    assert before == 1
+    assert inserted == 0
+    assert after == 1
+
+
+def test_storage_keeps_distinct_events_with_distinct_ids(tmp_path):
+    database = tmp_path / "timeline.db"
+    event_a = make_event("CASE01-SB0001")
+    event_b = make_event("CASE01-SB0002")
+    event_a.case_id = event_b.case_id = "CASE01"
+
+    with TimelineStore(str(database)) as store:
+        assert store.insert_events([event_a, event_b]) == 2
+        assert store.insert_events([event_a, event_b]) == 0
+        assert store.count() == 2
+
+
 def test_storage_exposes_schema_v2_columns(tmp_path):
     database = tmp_path / "timeline.db"
     event = ForensicEvent(
