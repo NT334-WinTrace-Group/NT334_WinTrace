@@ -24,18 +24,103 @@ def make_event(event_id="E01", timestamp="2026-10-25T02:10:00+00:00"):
 def test_storage_deduplicates_and_preserves_provenance(tmp_path):
     database = tmp_path / "timeline.db"
     with TimelineStore(str(database)) as store:
-        assert store.insert_events([make_event(), make_event("E02")]) == 1
-        assert store.count() == 1
+        assert store.insert_events([make_event(), make_event("E02")]) == 2
+        assert store.count() == 2
         events = store.query(artifact="evtx", keyword="report")
 
-    assert len(events) == 1
-    assert events[0].extra_attributes["evidence_reference"] == "Security.evtx:1"
+    assert len(events) == 2
+    assert all(event.extra_attributes["evidence_reference"] == "Security.evtx:1" for event in events)
 
 
 def test_storage_rejects_non_positive_limit(tmp_path):
     with TimelineStore(str(tmp_path / "timeline.db")) as store:
         with pytest.raises(ValueError, match="limit"):
             store.query(limit=0)
+
+
+def test_storage_migrates_legacy_fingerprint_on_reimport(tmp_path):
+    database = tmp_path / "timeline.db"
+    event = make_event("CASE01-SB0001")
+    event.extra_attributes = {
+        "timestamp_type": "EVTX_EventGenerated",
+        "evidence_reference": "Security.evtx:1",
+        "validation_status": "verified",
+        "case_id": "CASE01",
+    }
+    event.timestamp_type = "EVTX_EventGenerated"
+    event.evidence_reference = "Security.evtx:1"
+    event.validation_status = "verified"
+    event.case_id = "CASE01"
+
+    with TimelineStore(str(database)) as store:
+        assert store.insert_events([event]) == 1
+        old_fingerprint = store.legacy_fingerprint(event)
+        store.connection.execute(
+            "UPDATE events SET fingerprint = ?",
+            (old_fingerprint,),
+        )
+        store.connection.commit()
+        before = store.count()
+        assert store.fingerprint(event) != old_fingerprint
+
+    with TimelineStore(str(database)) as store:
+        migrated_row = store.connection.execute(
+            "SELECT fingerprint FROM events"
+        ).fetchone()
+        assert migrated_row["fingerprint"] == store.fingerprint(event)
+        inserted = store.insert_events([event])
+        after = store.count()
+
+    assert before == 1
+    assert inserted == 0
+    assert after == 1
+
+
+def test_storage_keeps_distinct_events_with_distinct_ids(tmp_path):
+    database = tmp_path / "timeline.db"
+    event_a = make_event("CASE01-SB0001")
+    event_b = make_event("CASE01-SB0002")
+    event_a.case_id = event_b.case_id = "CASE01"
+
+    with TimelineStore(str(database)) as store:
+        assert store.insert_events([event_a, event_b]) == 2
+        assert store.insert_events([event_a, event_b]) == 0
+        assert store.count() == 2
+
+
+def test_storage_upgrades_existing_event_with_case_id_without_duplicate(tmp_path):
+    database = tmp_path / "timeline.db"
+    event = make_event("CASE01-SB0001")
+
+    with TimelineStore(str(database)) as store:
+        assert store.insert_events([event]) == 1
+
+    event.case_id = "CASE01"
+    event.extra_attributes = {
+        "case_id": "CASE01",
+        "evidence_reference": "Security.evtx:1",
+    }
+
+    with TimelineStore(str(database)) as store:
+        assert store.insert_events([event]) == 0
+        assert store.count() == 1
+        restored, = store.query()
+
+    assert restored.case_id == "CASE01"
+    assert restored.extra_attributes["case_id"] == "CASE01"
+
+
+def test_storage_keeps_same_payload_separate_when_cases_differ(tmp_path):
+    database = tmp_path / "timeline.db"
+    event_a = make_event("SHARED-EVENT")
+    event_a.case_id = "CASE01"
+    event_b = make_event("SHARED-EVENT")
+    event_b.case_id = "CASE02"
+
+    with TimelineStore(str(database)) as store:
+        assert store.insert_events([event_a]) == 1
+        assert store.insert_events([event_b]) == 1
+        assert store.count() == 2
 
 
 def test_storage_exposes_schema_v2_columns(tmp_path):
@@ -113,6 +198,8 @@ def test_storage_migrates_legacy_database_and_recovers_provenance_on_reimport(tm
         with connection:
             if "validation_status" in legacy_columns:
                 connection.execute("DROP INDEX idx_events_validation")
+            if "case_id" in legacy_columns:
+                connection.execute("DROP INDEX idx_events_case")
             for column in legacy_columns:
                 connection.execute(f"ALTER TABLE events DROP COLUMN {column}")
     finally:

@@ -7,6 +7,7 @@ import hashlib
 import json
 import sqlite3
 from pathlib import Path
+from dataclasses import replace
 from typing import Any, Iterable, List, Optional
 
 from src.schema import ForensicEvent
@@ -29,6 +30,7 @@ class TimelineStore:
         with self.connection:
             self.connection.execute("BEGIN IMMEDIATE")
             self._initialize_schema()
+            self._migrate_fingerprints()
 
     def _initialize_schema(self) -> None:
         self.connection.execute("""
@@ -78,12 +80,27 @@ class TimelineStore:
             "target": "target_path",
             "username": "username",
             "validation": "validation_status",
+            "case": "case_id",
         }
         for name, column in indexes.items():
             self.connection.execute(f"CREATE INDEX IF NOT EXISTS idx_events_{name} ON events({column})")
 
     @staticmethod
     def fingerprint(event: ForensicEvent) -> str:
+        case_id = event.case_id or event.extra_attributes.get("case_id") or ""
+        values = (
+            event.event_id, case_id,
+            event.timestamp, event.timestamp_desc, event.artifact_source,
+            event.source_file, event.target_path, event.message, event.data_type,
+            event.parser, event.user_sid or "", event.username or "",
+            event.confidence_level,
+            json.dumps(event.extra_attributes, ensure_ascii=False, sort_keys=True),
+        )
+        return hashlib.sha256("\x1f".join(values).encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def legacy_fingerprint(event: ForensicEvent) -> str:
+        """Fingerprint format used before event_id/case_id were added."""
         values = (
             event.timestamp, event.timestamp_desc, event.artifact_source,
             event.source_file, event.target_path, event.message, event.data_type,
@@ -93,11 +110,44 @@ class TimelineStore:
         )
         return hashlib.sha256("\x1f".join(values).encode("utf-8")).hexdigest()
 
+    def _migrate_fingerprints(self) -> None:
+        rows = self.connection.execute("""
+            SELECT id, fingerprint, event_id, timestamp, timestamp_desc,
+                   artifact_source, source_file, target_path, message,
+                   data_type, parser, user_sid, username, confidence_level,
+                   timestamp_type, evidence_reference, validation_status,
+                   case_id, extra_attributes
+            FROM events
+        """).fetchall()
+
+        for row in rows:
+            data = dict(row)
+            stored_fingerprint = data.pop("fingerprint")
+            data.pop("id")
+            extra_attributes = json.loads(data.pop("extra_attributes") or "{}")
+            data["extra_attributes"] = extra_attributes
+            event = ForensicEvent.from_dict(data)
+            legacy_fingerprint = self.legacy_fingerprint(event)
+            if stored_fingerprint != legacy_fingerprint:
+                continue
+
+            new_fingerprint = self.fingerprint(event)
+            collision = self.connection.execute(
+                "SELECT 1 FROM events WHERE fingerprint = ? AND fingerprint != ?",
+                (new_fingerprint, stored_fingerprint),
+            ).fetchone()
+            if collision is None:
+                self.connection.execute(
+                    "UPDATE events SET fingerprint = ? WHERE id = ?",
+                    (new_fingerprint, row["id"]),
+                )
+
     def insert_events(self, events: Iterable[ForensicEvent]) -> int:
         rows = []
         provenance_rows = []
         for event in events:
             fingerprint = self.fingerprint(event)
+            legacy_fingerprint = self.legacy_fingerprint(event)
             provenance = {
                 field: getattr(event, field)
                 for field in PROVENANCE_FIELDS
@@ -105,6 +155,101 @@ class TimelineStore:
             for field, value in provenance.items():
                 if value is None:
                     provenance[field] = event.extra_attributes.get(field)
+
+            exact = self.connection.execute(
+                "SELECT fingerprint FROM events WHERE fingerprint = ?",
+                (fingerprint,),
+            ).fetchone()
+            if exact is None:
+                compatible = self.connection.execute(
+                    """
+                    SELECT * FROM events
+                    WHERE fingerprint = ?
+                       OR (
+                           event_id = ?
+                           AND timestamp = ?
+                           AND timestamp_desc = ?
+                           AND artifact_source = ?
+                           AND source_file = ?
+                           AND target_path = ?
+                           AND message = ?
+                           AND data_type = ?
+                           AND parser = ?
+                           AND (user_sid IS ? OR user_sid = ?)
+                           AND (username IS ? OR username = ?)
+                           AND confidence_level = ?
+                       )
+                    """,
+                    (
+                        legacy_fingerprint,
+                        event.event_id,
+                        event.timestamp,
+                        event.timestamp_desc,
+                        event.artifact_source,
+                        event.source_file,
+                        event.target_path,
+                        event.message,
+                        event.data_type,
+                        event.parser,
+                        event.user_sid,
+                        event.user_sid,
+                        event.username,
+                        event.username,
+                        event.confidence_level,
+                    ),
+                ).fetchall()
+
+                compatible = [
+                    row for row in compatible
+                    if (
+                        row["case_id"] is None
+                        or row["case_id"] == ""
+                        or provenance["case_id"] is None
+                        or row["case_id"] == provenance["case_id"]
+                    )
+                ]
+                if len(compatible) == 1:
+                    existing = compatible[0]
+                    existing_extra = json.loads(existing["extra_attributes"] or "{}")
+                    merged_extra = {**existing_extra, **event.extra_attributes}
+                    chosen_case_id = existing["case_id"] or provenance["case_id"]
+                    upgraded = replace(
+                        event,
+                        extra_attributes=merged_extra,
+                        case_id=chosen_case_id,
+                        timestamp_type=provenance["timestamp_type"] or event.timestamp_type,
+                        evidence_reference=provenance["evidence_reference"] or event.evidence_reference,
+                        validation_status=provenance["validation_status"] or event.validation_status,
+                    )
+                    new_fingerprint = self.fingerprint(upgraded)
+                    collision = self.connection.execute(
+                        "SELECT 1 FROM events WHERE fingerprint = ? AND id != ?",
+                        (new_fingerprint, existing["id"]),
+                    ).fetchone()
+                    if collision is None:
+                        self.connection.execute(
+                            """
+                            UPDATE events SET
+                                fingerprint = ?,
+                                timestamp_type = ?,
+                                evidence_reference = ?,
+                                validation_status = ?,
+                                case_id = ?,
+                                extra_attributes = ?
+                            WHERE id = ?
+                            """,
+                            (
+                                new_fingerprint,
+                                upgraded.timestamp_type,
+                                upgraded.evidence_reference,
+                                upgraded.validation_status,
+                                upgraded.case_id,
+                                json.dumps(merged_extra, ensure_ascii=False, sort_keys=True),
+                                existing["id"],
+                            ),
+                        )
+                        continue
+
             if any(value is not None for value in provenance.values()):
                 provenance_rows.append({"fingerprint": fingerprint, **provenance})
 
@@ -152,6 +297,7 @@ class TimelineStore:
         end: Optional[datetime] = None,
         artifact: Optional[str] = None,
         keyword: Optional[str] = None,
+        case_id: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> List[ForensicEvent]:
         clauses: List[str] = []
@@ -169,6 +315,9 @@ class TimelineStore:
             clauses.append("(lower(target_path) LIKE lower(?) OR lower(message) LIKE lower(?))")
             pattern = f"%{keyword}%"
             parameters.extend([pattern, pattern])
+        if case_id:
+            clauses.append("lower(case_id) = lower(?)")
+            parameters.append(case_id)
         sql = "SELECT * FROM events"
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)

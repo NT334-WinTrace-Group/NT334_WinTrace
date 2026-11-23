@@ -24,6 +24,10 @@ class TestSchema(unittest.TestCase):
         self.assertEqual(normalize_windows_path("C:\\\\Windows\\\\System32\\\\cmd.exe"), "C:\\Windows\\System32\\cmd.exe")
         self.assertEqual(normalize_windows_path(' "C:\\Folder\\Data" '), "C:\\Folder\\Data")
         self.assertEqual(normalize_windows_path(None), "")
+        self.assertEqual(
+            normalize_windows_path(r"\\10.11.11.128\secured_drive\Secret Project Data"),
+            r"\\10.11.11.128\secured_drive\Secret Project Data",
+        )
 
     def test_parse_iso_utc(self):
         dt = parse_iso_utc("2026-10-25T02:14:00+00:00")
