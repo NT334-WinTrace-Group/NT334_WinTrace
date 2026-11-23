@@ -8,8 +8,13 @@ from pathlib import Path
 
 import pytest
 
+import src.schema
 from src.normalizer import PlasoNormalizer
 from src.storage import TimelineStore
+
+# Schema v2 (nhánh nam-week2-v2) mới có validation_status/case_id trên ForensicEvent và sửa lỗi UNC.
+SCHEMA_V2 = hasattr(src.schema, "VALID_TIMESTAMP_TYPES")
+requires_schema_v2 = pytest.mark.skipif(not SCHEMA_V2, reason="cần schema v2 (src/schema.py có VALID_TIMESTAMP_TYPES)")
 
 ROOT = Path(__file__).resolve().parent.parent
 UNIFIED = ROOT / "results" / "case01_shellbags_events.csv"
@@ -17,7 +22,7 @@ V2 = ROOT / "analysis" / "phuc-artifacts" / "shellbags_findings.csv"
 SBECMD = ROOT / "analysis" / "phuc-artifacts" / "tool_output" / "sbecmd" / "Deduplicated.csv"
 
 EXPECTED_EVENTS = 383
-EXPECTED_VERIFIED = 30
+EXPECTED_VERIFIED = 13  # tuần 3: chỉ hành động người dùng đã kiểm bằng GUI (17 event metadata đã hạ)
 SBECMD_ROWS = 109
 
 
@@ -122,9 +127,26 @@ def test_cross_hive_twins_are_linked(events):
             assert ids[t].source_file != e.source_file
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "src/schema.py::normalize_windows_path gộp '\\\\' đầu UNC thành '\\' -> mất dạng "
-    "\\\\host\\share. Khi đã sửa, test sẽ XPASS: xóa marker xfail."))
-def test_unc_target_path_survives_normalization(events):
+def test_metadata_events_are_never_verified(events):
+    """Kế hoạch tuần 3: không gán VERIFIED khi event chỉ là timestamp metadata."""
+    for e in events:
+        x = e.extra_attributes
+        if x["semantic_class"] != "user_interaction":
+            assert getattr(e, "validation_status", x["validation_status"]) != "verified", e.event_id
+            assert x["validation_status"] != "verified", e.event_id
+
+
+def test_value_checks_are_kept_after_downgrade(events):
+    """Hạ nhãn không được làm mất kết quả đối chiếu giá trị với công cụ độc lập."""
+    downgraded = [e for e in events if e.extra_attributes.get("value_cross_checked_by")
+                  and e.extra_attributes["validation_status"] != "verified"]
+    assert len(downgraded) == 17
+    assert all("ShellBags Explorer" in e.extra_attributes["value_cross_checked_by"] for e in downgraded)
+
+
+@requires_schema_v2
+def test_unc_target_path_keeps_double_backslash(events):
+    """Yêu cầu schema v2: đường dẫn UNC giữ nguyên tiền tố \\\\host.
+    Phụ thuộc bản sửa normalize_windows_path của Nam (nhánh nam-week2-v2)."""
     e = next(e for e in events if e.event_id == "CASE01-SB0033")
-    assert e.target_path.startswith("\\\\10.11.11.128\\")
+    assert e.target_path == "\\\\10.11.11.128\\secured_drive\\Secret Project Data\\design"

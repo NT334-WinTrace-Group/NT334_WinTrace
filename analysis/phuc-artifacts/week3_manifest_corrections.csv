@@ -1,0 +1,23 @@
+item_id,field,current_value,proposed_value,severity,basis
+CASE01-IMG-001,file_size_bytes,42949672960,"đo lại: (Get-Item <đường dẫn .dd>).Length",P1,"Giá trị 40 GiB không có nguồn đo; ảnh đĩa giải nén ~20 GB. Phúc chưa đo kích thước chính xác"
+CASE01-IMG-001,md5 (cột mới hoặc forensic_scenario),(không có),A49D1254C873808C58E6F1BCD60B5BDE,P2,"MD5 khớp giá trị NIST công bố (leakage-answers.pdf mục 4.1) – bằng chứng integrity mạnh nhất của ảnh đĩa"
+CASE01-IMG-001,acquisition_date,2015-03-25T15:30:00Z,unresolved (ghi nguồn hoặc để trống),P2,"Không tìm thấy nguồn cho mốc này trong repo"
+CASE01-EVD-001,file_size_bytes,1572864,786432,P0,"Đo trên evidence_work/hives/UsrClass.dat; SHA-256 a26fe02d… khớp (case01_source_inventory.csv)"
+CASE01-EVD-002,file_size_bytes,262144,1048576,P0,"Đo trên evidence_work/hives/NTUSER.DAT; SHA-256 2190b57e… khớp"
+CASE01-EVD-001/002,acquisition_date,2026-10-28T03:21:16Z,giữ; ghi rõ là thời điểm hash bản copy,P2,"Lượt thu thập chính thức 2026-10-28T03:19:02Z (case_notes/collection_log.md); 03:21:16Z là lúc chạy hash"
+CASE01-OUT-001,sha256,1bad7daa…,giữ nguyên,OK,"Khớp sau khi khôi phục byte CRLF gốc (tool_output/.gitattributes: * -text); test_tool_output_matches_published_hash"
+CASE01-EVT-001,sha256,e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855,"tính lại sau khi merge PR tuần 3 (xem week3_repo_dataset_inventory.csv, hash chuẩn hóa LF)",P0,"e3b0c442…b855 là SHA-256 của chuỗi RỖNG – không phải hash của file"
+CASE01-EVT-001,file_size_bytes,212716,"theo file sau merge (tuần 3: 575015 byte, có thêm cột schema v2)",P1,"File được tạo lại bằng scripts/to_team_schema.py"
+CASE01-EVT-001,integrity_status,VERIFIED,REGENERABLE,P1,"Là dữ liệu dẫn xuất: tái tạo được, kiểm bằng test traceability 383/383, không phải evidence gốc"
+CASE01-EVD-003,file_size_bytes,1425408,7554530,P0,"95 file .pf, tổng byte đo trên evidence_work/Prefetch"
+CASE01-EVD-003,sha256,(trống),list-hash d2976d7c9968284b3bf3aad35cefdc79625b634325b34732cf863d723495d7e4,P0,"SHA-256 của danh sách sha256 từng file (sort theo tên); chi tiết từng file trong case01_source_inventory.csv. Không có hash thì không được ghi VERIFIED"
+CASE01-EVD-004,file_size_bytes,32768,46958,P1,15 file .lnk
+CASE01-EVD-004,sha256,(trống),list-hash 93d132ffb26643cadb3fed1ffebc650173ec5df75510a57fb2e66ce91cbe20b4,P0,như trên
+CASE01-EVD-005,file_size_bytes,131072,121352,P1,"14 file (automaticDestinations + customDestinations)"
+CASE01-EVD-005,sha256,(trống),list-hash d740ff1d726c9bb25b4d506c1b717d665bb68641386469a4724aca19f53cb9cf,P0,như trên
+(mới) CASE01-EVD-006,—,—,"SYSTEM hive 12582912 byte, SHA-256 e896ef300843a3efd1c1f96b25fd2b209cd1ad28d653ab6bc05699f910bbd3d1",P1,"Dùng cho timezone, USBSTOR, MountedDevices"
+(mới) CASE01-EVD-007,—,—,"SOFTWARE hive 48496640 byte, SHA-256 03422334efaca3c9cd2657518b5706fb9ef42ef7abe49cc3dddaa98dabb394ac",P1,"Dùng cho ProfileList, EMDMgmt"
+(mới) CASE01-EVD-008,—,—,"$Recycle.Bin: 3 file desktop.ini (387 byte), 0 file $I/$R; list-hash bb88362ec266d7facccac7d308a17f2f74e6670ab8803b751cfe4fe3697cd5ea",P2,"Ghi nhận thùng rác trống tại thời điểm thu thập"
+(mới) CASE01-OUT-002..006,—,—,"tool_output/lecmd, jlecmd, pecmd (2), registry – hash trong test_tool_output_matches_published_hash",P1,"Output chạy trên ổ mount read-only F:"
+(mới) CASE01-EVT-002,—,—,analysis/phuc-artifacts/case01_supporting_events.csv (309 event LNK/JumpLists/Prefetch/Registry),P1,"Dẫn xuất, REGENERABLE bằng scripts/build_supporting_events.py"
+SIM-EVD-001..006,integrity_status,VERIFIED,NOT_VERIFIED (hoặc SYNTHETIC),P0,"File không có trong repo; giá trị cột sha256 chỉ dài 32 ký tự hex (độ dài của MD5, không phải SHA-256) và có mẫu lặp. Dữ liệu synthetic không được mang nhãn VERIFIED"

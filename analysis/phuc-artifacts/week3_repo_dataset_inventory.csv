@@ -1,0 +1,30 @@
+path,sha256,bytes,records,dataset_class,producer
+results/case01_candidates_review.csv,6b71991fb390c61e7d96fcdb7167d917d638d8aa63f352bb30ebf0f9f18ec785,94785,452,case01_real,"Thi – analysis/thi-timeline/*.py, dẫn xuất từ results/case01_shellbags_events.csv"
+results/case01_review_v2/case01_candidates_review_enriched.csv,54e154b83040348e147d0c96e2112d3700811f73bbee5c9d77436f7e4c33219a,204698,452,case01_real,"Thi – analysis/thi-timeline/*.py, dẫn xuất từ results/case01_shellbags_events.csv"
+results/case01_review_v2/case01_shellbags_path_context.csv,ac464d8d2167db8bf2ee855c5256b4ae1b31c86d0198b6069a7429fc0b221b7a,47206,91,case01_real,"Thi – analysis/thi-timeline/*.py, dẫn xuất từ results/case01_shellbags_events.csv"
+results/case01_review_v2/case01_shellbags_timestamp_audit.csv,b1fe6c4949343951e4f25f48d80134afb23f90cb10d64da7acba69e2e7fc1fbd,149548,383,case01_real,"Thi – analysis/thi-timeline/*.py, dẫn xuất từ results/case01_shellbags_events.csv"
+results/case01_shellbags_events.csv,d7fa967fca451a9d6fcebc42f057dffa2f4712c52969711bb5bd834c3e6f9dd5,575015,383,case01_real,scripts/to_team_schema.py từ shellbags_findings.csv + Deduplicated.csv
+results/case01_shellbags_groups.csv,f182864ae3097fb2b86c2692dd0a6fa64452566d6ef508f068ef43e3882b9243,35690,91,case01_real,"Thi – analysis/thi-timeline/*.py, dẫn xuất từ results/case01_shellbags_events.csv"
+results/case01_shellbags_path_context.csv,47c6dec103b7b419a1053703c110f3493612603665ba92d09b6b9c616e29e935,45744,91,case01_real,"Thi – analysis/thi-timeline/*.py, dẫn xuất từ results/case01_shellbags_events.csv"
+results/case01_shellbags_timestamp_audit.csv,cf86a9af6fbf1f11886c30171c885e2af65b73932df619c87f170cecd039aff2,142724,383,case01_real,"Thi – analysis/thi-timeline/*.py, dẫn xuất từ results/case01_shellbags_events.csv"
+results/correlation_findings.csv,2ef70354bb7da6244e8a8c94d3705bda29b110b51d85ad4e1d1611af3a329dd8,1871,7,synthetic_alice,Nam – scenario/prototype
+results/correlation_findings.json,8e5c197727f7b901c81641716b15f5958b15e59d4761438c2198c62ff9a9ac37,5349,7,synthetic_alice,Nam – scenario/prototype
+results/plaso_raw_output.csv,2da3243ef1f1e6eb600c0750e41fcd1ad96a569251e7050dd977106cccc7dbc4,2126,8,synthetic_alice,Nam – scenario/prototype
+results/sample_timeline.csv,5cbeed085547e5b3a27188e39fe31a456793523bc6fec5ba7cf1f7cbd98954ac,2627,8,synthetic_alice,Nam – scenario/prototype
+results/sample_timeline.json,d48b3984faa06a62d28a7081c130793bcad80c2ab5bc226bc89f8e36646d54bd,5483,8,synthetic_alice,Nam – scenario/prototype
+analysis/phuc-artifacts/case01_source_inventory.csv,01f85cc44f8f7c3b616a8078211ef77e106912a1a92b67ed50af5dcbe4752f9b,19880,145,case01_real,Phúc
+analysis/phuc-artifacts/case01_supporting_events.csv,5c39b204117d2040554c0e10ee4296d6237fac2053544a6e10b95db61beb3d79,301408,309,case01_real,scripts/build_supporting_events.py từ tool_output/*_fromF.csv
+analysis/phuc-artifacts/shellbags_findings.csv,363c990444326d7502f63372ad47c39867c44f2e5ceb338cc3c9fb4be116fb3d,152013,383,case01_real,scripts/sbecmd_to_findings.py + apply_verification_policy.py
+analysis/phuc-artifacts/tool_output/jlecmd/AutomaticDestinations_fromF.csv,b1f479a20e964afd3c60d011808684163736b795468769286389912ed9145066,22202,31,case01_real,JLECmd 2026.10.5 trên ổ mount read-only F:
+analysis/phuc-artifacts/tool_output/lecmd/LECmd_Output_fromF.csv,09b02fc5a19b12af226b7d0baab8b139f24588273a59b85608a00af1427650ee,9345,15,case01_real,LECmd 2026.10.3 trên ổ mount read-only F:
+analysis/phuc-artifacts/tool_output/pecmd/PECmd_Output_Timeline_fromF.csv,4801c2972aefee0bad7afc6db276eb3cd0f829b20ae3fb43d19de704c14bcd0e,12655,95,case01_real,PECmd 2026.10.3 trên ổ mount read-only F:
+analysis/phuc-artifacts/tool_output/pecmd/PECmd_Output_fromF.csv,212f764f8674c401def0a29f083f6f7902dc617c5f12cc66b93b8cceb9a443ee,1119843,,case01_real,PECmd 2026.10.3 trên ổ mount read-only F:
+analysis/phuc-artifacts/tool_output/registry/registry_usb_network.csv,5057d1c038ce23ca69ecc20a89582f46dfc4569b0d5c8a820923857fcf85a86e,5675,26,case01_real,scripts/registry_usb_check.py (python-registry 1.3.1) trên hive bản copy
+analysis/phuc-artifacts/tool_output/sbecmd/Deduplicated.csv,b2eaf0a55e4dda7b788940a2e1029a266599f51db3905b82a37789d81705e8df,28543,109,case01_real,SBECmd 2026.10.2 trên hive bản copy (evidence_work/hives)
+analysis/phuc-artifacts/volume_map_case01.csv,6c6e8b3dd5934586b660dafd6131f5bbd3fa65101510a6068369a4efb8089542,2494,8,case01_real,Phúc
+analysis/phuc-artifacts/week3_cross_hive_deltas.csv,e1e077251ecc01b1d6cd3c3b20716264a09f4d0de7b7258f7615b2e31af9b8a4,2337,14,case01_real,Phúc
+analysis/phuc-artifacts/week3_evidence_traceability.csv,9fb5be470dbed8d47180219a857679c2428ce82e13cc9c5144eeaad6b0a3fc46,82696,692,case01_real,Phúc
+analysis/phuc-artifacts/week3_manifest_corrections.csv,8682a7fef521a0c0e029b43676d2f5f4d13d80c4c9a0c2594f766b3fdbd0fc4e,4037,22,case01_real,Phúc
+analysis/phuc-artifacts/week3_validation_matrix.csv,1ee04fe34230f6f82b6befb82cac971ccae8542a62e033d9805be6a92b8606a5,112755,631,case01_real,Phúc
+analysis/thi-timeline/week3_findings_validation.csv,74ca911172341b5ae89b3d83091ee8c4c5e1641ace54b9071e863c8c0973ac03,2848,3,case01_real,Thi
+docs/evidence_manifest.csv,4265087a22aeeca27653ff93389100e81b144544ef86c122f62c78d0f7e1e3bd,4161,14,mixed,Quyên/Nam – nhập tay
