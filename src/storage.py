@@ -7,6 +7,7 @@ import hashlib
 import json
 import sqlite3
 from pathlib import Path
+from dataclasses import replace
 from typing import Any, Iterable, List, Optional
 
 from src.schema import ForensicEvent
@@ -147,16 +148,6 @@ class TimelineStore:
         for event in events:
             fingerprint = self.fingerprint(event)
             legacy_fingerprint = self.legacy_fingerprint(event)
-            if legacy_fingerprint != fingerprint:
-                collision = self.connection.execute(
-                    "SELECT 1 FROM events WHERE fingerprint = ?",
-                    (fingerprint,),
-                ).fetchone()
-                if collision is None:
-                    self.connection.execute(
-                        "UPDATE events SET fingerprint = ? WHERE fingerprint = ?",
-                        (fingerprint, legacy_fingerprint),
-                    )
             provenance = {
                 field: getattr(event, field)
                 for field in PROVENANCE_FIELDS
@@ -164,6 +155,101 @@ class TimelineStore:
             for field, value in provenance.items():
                 if value is None:
                     provenance[field] = event.extra_attributes.get(field)
+
+            exact = self.connection.execute(
+                "SELECT fingerprint FROM events WHERE fingerprint = ?",
+                (fingerprint,),
+            ).fetchone()
+            if exact is None:
+                compatible = self.connection.execute(
+                    """
+                    SELECT * FROM events
+                    WHERE fingerprint = ?
+                       OR (
+                           event_id = ?
+                           AND timestamp = ?
+                           AND timestamp_desc = ?
+                           AND artifact_source = ?
+                           AND source_file = ?
+                           AND target_path = ?
+                           AND message = ?
+                           AND data_type = ?
+                           AND parser = ?
+                           AND (user_sid IS ? OR user_sid = ?)
+                           AND (username IS ? OR username = ?)
+                           AND confidence_level = ?
+                       )
+                    """,
+                    (
+                        legacy_fingerprint,
+                        event.event_id,
+                        event.timestamp,
+                        event.timestamp_desc,
+                        event.artifact_source,
+                        event.source_file,
+                        event.target_path,
+                        event.message,
+                        event.data_type,
+                        event.parser,
+                        event.user_sid,
+                        event.user_sid,
+                        event.username,
+                        event.username,
+                        event.confidence_level,
+                    ),
+                ).fetchall()
+
+                compatible = [
+                    row for row in compatible
+                    if (
+                        row["case_id"] is None
+                        or row["case_id"] == ""
+                        or provenance["case_id"] is None
+                        or row["case_id"] == provenance["case_id"]
+                    )
+                ]
+                if len(compatible) == 1:
+                    existing = compatible[0]
+                    existing_extra = json.loads(existing["extra_attributes"] or "{}")
+                    merged_extra = {**existing_extra, **event.extra_attributes}
+                    chosen_case_id = existing["case_id"] or provenance["case_id"]
+                    upgraded = replace(
+                        event,
+                        extra_attributes=merged_extra,
+                        case_id=chosen_case_id,
+                        timestamp_type=provenance["timestamp_type"] or event.timestamp_type,
+                        evidence_reference=provenance["evidence_reference"] or event.evidence_reference,
+                        validation_status=provenance["validation_status"] or event.validation_status,
+                    )
+                    new_fingerprint = self.fingerprint(upgraded)
+                    collision = self.connection.execute(
+                        "SELECT 1 FROM events WHERE fingerprint = ? AND id != ?",
+                        (new_fingerprint, existing["id"]),
+                    ).fetchone()
+                    if collision is None:
+                        self.connection.execute(
+                            """
+                            UPDATE events SET
+                                fingerprint = ?,
+                                timestamp_type = ?,
+                                evidence_reference = ?,
+                                validation_status = ?,
+                                case_id = ?,
+                                extra_attributes = ?
+                            WHERE id = ?
+                            """,
+                            (
+                                new_fingerprint,
+                                upgraded.timestamp_type,
+                                upgraded.evidence_reference,
+                                upgraded.validation_status,
+                                upgraded.case_id,
+                                json.dumps(merged_extra, ensure_ascii=False, sort_keys=True),
+                                existing["id"],
+                            ),
+                        )
+                        continue
+
             if any(value is not None for value in provenance.values()):
                 provenance_rows.append({"fingerprint": fingerprint, **provenance})
 

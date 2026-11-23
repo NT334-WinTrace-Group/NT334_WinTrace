@@ -88,6 +88,41 @@ def test_storage_keeps_distinct_events_with_distinct_ids(tmp_path):
         assert store.count() == 2
 
 
+def test_storage_upgrades_existing_event_with_case_id_without_duplicate(tmp_path):
+    database = tmp_path / "timeline.db"
+    event = make_event("CASE01-SB0001")
+
+    with TimelineStore(str(database)) as store:
+        assert store.insert_events([event]) == 1
+
+    event.case_id = "CASE01"
+    event.extra_attributes = {
+        "case_id": "CASE01",
+        "evidence_reference": "Security.evtx:1",
+    }
+
+    with TimelineStore(str(database)) as store:
+        assert store.insert_events([event]) == 0
+        assert store.count() == 1
+        restored, = store.query()
+
+    assert restored.case_id == "CASE01"
+    assert restored.extra_attributes["case_id"] == "CASE01"
+
+
+def test_storage_keeps_same_payload_separate_when_cases_differ(tmp_path):
+    database = tmp_path / "timeline.db"
+    event_a = make_event("SHARED-EVENT")
+    event_a.case_id = "CASE01"
+    event_b = make_event("SHARED-EVENT")
+    event_b.case_id = "CASE02"
+
+    with TimelineStore(str(database)) as store:
+        assert store.insert_events([event_a]) == 1
+        assert store.insert_events([event_b]) == 1
+        assert store.count() == 2
+
+
 def test_storage_exposes_schema_v2_columns(tmp_path):
     database = tmp_path / "timeline.db"
     event = ForensicEvent(
