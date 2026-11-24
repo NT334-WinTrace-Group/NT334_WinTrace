@@ -84,33 +84,97 @@ def path_relation(path1: str, path2: str) -> Optional[str]:
     return None
 
 
-def is_program_file_pair(event_prog: ForensicEvent, event_file: ForensicEvent,
-                         *, require_reference: bool = False) -> bool:
-    """Identify program/file candidates, optionally requiring a direct file reference."""
+
+def is_program_file_pair(
+    event_prog: ForensicEvent,
+    event_file: ForensicEvent,
+    *,
+    require_reference: bool = False,
+) -> bool:
+    """Identify program/file association using direct file references."""
+
     prog_artifacts = {"Prefetch", "Amcache", "EVTX"}
-    file_artifacts = {"LNK", "ShellBags", "RecycleBin", "NTFS_MFT", "JumpLists"}
+    file_artifacts = {
+        "LNK", "ShellBags", "RecycleBin",
+        "NTFS_MFT", "JumpLists"
+    }
 
     is_prog = (
-        event_prog.artifact_source in prog_artifacts or
-        "execute" in event_prog.message.lower() or
-        event_prog.target_path.lower().endswith(".exe")
+        event_prog.artifact_source in prog_artifacts
+        or "execute" in event_prog.message.lower()
+        or event_prog.target_path.lower().endswith(".exe")
     )
+
     is_file = (
-        event_file.artifact_source in file_artifacts or
-        any(event_file.target_path.lower().endswith(ext) for ext in [".docx", ".pdf", ".xlsx", ".txt", ".zip"])
+        event_file.artifact_source in file_artifacts
+        or any(
+            event_file.target_path.lower().endswith(ext)
+            for ext in [".docx", ".pdf", ".xlsx", ".txt", ".zip"]
+        )
     )
 
     if not (is_prog and is_file):
         return False
 
-    referenced_files = event_prog.extra_attributes.get("referenced_files", [])
-    if isinstance(referenced_files, (list, tuple)) and any(
-        isinstance(ref, str) and path_relation(ref, event_file.target_path) == "Same path"
+    # Existing explicit references
+    referenced_files = event_prog.extra_attributes.get(
+        "referenced_files", []
+    )
+
+    if not isinstance(referenced_files, (list, tuple)):
+        referenced_files = []
+
+    # CASE01 Prefetch: supporting events from Phuc
+    if (
+        event_prog.artifact_source == "Prefetch"
+        and event_prog.timestamp_type == "Prefetch_LastRun"
+    ):
+        files_loaded = event_prog.extra_attributes.get(
+            "files_loaded_user", []
+        )
+
+        if isinstance(files_loaded, (list, tuple)):
+            referenced_files = (
+                list(referenced_files) + list(files_loaded)
+            )
+
+    # Require an explicit match to the same file
+    if any(
+        isinstance(ref, str)
+        and path_relation(ref, event_file.target_path) == "Same path"
         for ref in referenced_files
     ):
         return True
+
     if require_reference:
         return False
+
+    # Legacy heuristic retained for compatibility.
+    # CorrelationEngine R04 uses require_reference=True.
+    exec_name = PureWindowsPath(
+        event_prog.target_path
+    ).name.lower()
+
+    doc_ext = PureWindowsPath(
+        event_file.target_path
+    ).suffix.lower()
+
+    office_exts = {".docx", ".doc", ".dotx"}
+
+    if "winword" in exec_name and doc_ext in office_exts:
+        return True
+
+    if "excel" in exec_name and doc_ext in {
+        ".xlsx", ".xls", ".csv"
+    }:
+        return True
+
+    if "notepad" in exec_name and doc_ext in {
+        ".txt", ".log", ".ini"
+    }:
+        return True
+
+    return False
 
     # General association if time is close and program can open that document
     exec_name = PureWindowsPath(event_prog.target_path).name.lower()
@@ -321,3 +385,31 @@ class CorrelationEngine:
                 # Remove fields not in fieldnames
                 row = {k: v for k, v in row.items() if k in fieldnames}
                 writer.writerow(row)
+def test_r04_prefetch_files_loaded_user_supports_direct_file_link():
+    doc = r"C:\Users\informant\Desktop\Resignation_Letter_(Iaman_Informant).docx"
+
+    pf = event(
+        "PF-C5", "2015-03-25T15:24:48+00:00",
+        "Prefetch", r"C:\Program Files\Microsoft Office\Office15\WINWORD.EXE",
+        "WINWORD execution",
+    )
+    pf.timestamp_type = "Prefetch_LastRun"
+    pf.extra_attributes["files_loaded_user"] = [doc]
+
+    lnk = event(
+        "LNK-C5", "2015-03-25T15:29:08+00:00",
+        "LNK", doc, "Shortcut updated",
+    )
+
+    finding = finding_for([pf, lnk], "PF-C5", "LNK-C5")
+
+    assert finding is not None
+    assert "R04" in finding.matched_rules
+    assert "R03" in finding.matched_rules
+
+    unrelated = event(
+        "LNK-OTHER", "2015-03-25T15:29:08+00:00",
+        "LNK", r"C:\Other\unrelated.docx", "Unrelated shortcut",
+    )
+    other = finding_for([pf, unrelated], "PF-C5", "LNK-OTHER")
+    assert other is None or "R04" not in other.matched_rules
