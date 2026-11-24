@@ -6,6 +6,7 @@ independent forensic verification. They require committed Phuc output CSVs.
 """
 
 import csv
+import sys
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,9 +18,11 @@ PHUC = ROOT / 'analysis' / 'phuc-artifacts'
 def _csv(relpath):
     path = ROOT / relpath
     assert path.is_file(), f'Missing committed evidence file: {path}'
+
+    csv.field_size_limit(sys.maxsize)
+
     with path.open(encoding='utf-8-sig', newline='') as fh:
         return list(csv.DictReader(fh))
-
 
 def _row_at_line(relpath, line_number):
     """For the committed one-record-per-line CSVs, header is L1, row 1 is L2."""
@@ -106,3 +109,30 @@ def test_reused_drive_letter_is_not_a_unique_device_identifier():
     assert len(e_volumes) >= 2
     assert len({r['canonical_volume'] for r in e_volumes}) >= 2
     # An E: path alone cannot establish volume identity across timestamps.
+def test_c5_winword_filesloaded_contains_resignation_docx():
+    """Verify the direct Prefetch file reference, not just temporal proximity."""
+    rows = _csv(
+        "analysis/phuc-artifacts/tool_output/pecmd/"
+        "PECmd_Output_fromF.csv"
+    )
+
+    matches = [
+        (line_no, row)
+        for line_no, row in enumerate(rows, start=2)
+        if row["ExecutableName"].upper() == "WINWORD.EXE"
+    ]
+
+    assert len(matches) == 1
+
+    line_no, winword = matches[0]
+    assert line_no == 88
+
+    loaded = winword["FilesLoaded"].upper()
+
+    expected_path = (
+        r"\DEVICE\HARDDISKVOLUME2\USERS\INFORMANT"
+        r"\DESKTOP\RESIGNATION_LETTER_(IAMAN_INFORMANT).DOCX"
+    )
+
+    assert expected_path in loaded
+    assert winword["RunCount"]
