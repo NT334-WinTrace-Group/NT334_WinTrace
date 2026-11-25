@@ -61,6 +61,7 @@ Kiểm theo thứ tự; dòng khớp đầu tiên được dùng:
 | `verified` | Validated |
 | `disputed` | Unresolved |
 | `synthetic` | Synthetic |
+| Giá trị khác | Unrecognized status |
 
 Engine hiện để null cho toàn bộ 6.192 finding CASE01, nên tất cả là Candidate. Điểm HIGH, event `verified` hay việc xem trên UI **không** nâng trạng thái. UI chỉ đọc, không ghi trạng thái. Kết quả duyệt thủ công C1/C2/C5 của Thi nằm ở `week3_findings_validation.csv`, là nguồn riêng và không đè lên finding.
 

@@ -1,6 +1,6 @@
 # Tuần 3 – Ngày 15: Kiểm kê UI
 
-Kiểm kê ban đầu theo `src/app.py` tại `dev` `8053b34`; đã cập nhật đến Ngày 17. `[x]` đã có, `[ ]` còn thiếu.
+Kiểm kê ban đầu theo `src/app.py` tại `dev` `8053b34`; đã cập nhật đến Ngày 18. `[x]` đã có, `[ ]` còn thiếu.
 
 ## Ngày 16 – Timeline và filters
 - [x] Bảng event; lọc ngày UTC, path, keyword, một artifact (AND)
@@ -20,14 +20,14 @@ Kiểm kê ban đầu theo `src/app.py` tại `dev` `8053b34`; đã cập nhật
 
 ## Ngày 18 – Findings
 - [x] finding_id, confidence, rules, time delta, explanation, references
-- [ ] P0: findings mặc định là Alice; chặn trộn với CASE01
-- [ ] P0: nhãn Candidate / Validated / Unresolved lấy từ dữ liệu
-- [ ] P0: mở được event nguồn kể cả khi nằm ngoài filter timeline
-- [ ] P1: lọc rule, status; phân trang (6.192 finding); hiện path và `investigation_note`
-- [ ] P1: 3 candidate kiểm tra:
-  - [ ] C1: `CASE01-SB0133` + `CASE01-JL0022`
-  - [ ] C2: `CASE01-SB0147` + `CASE01-JL0020`
-  - [ ] C5: `CASE01-PF0173` + `CASE01-LNK0037`
+- [x] P0: findings mặc định là Alice; chặn trộn với CASE01
+- [x] P0: nhãn Candidate / Validated / Unresolved lấy từ dữ liệu
+- [x] P0: mở được event nguồn kể cả khi nằm ngoài filter timeline
+- [x] P1: lọc rule, status; phân trang (6.192 finding); hiện path và `investigation_note`
+- [x] P1: 3 candidate kiểm tra:
+  - [x] C1: `CASE01-SB0133` + `CASE01-JL0022`
+  - [x] C2: `CASE01-SB0147` + `CASE01-JL0020`
+  - [x] C5: `CASE01-PF0173` + `CASE01-LNK0037`
 
 ## Ngày 19 – Export
 - [x] CSV timeline (chỉ các dòng đã tải), HTML report
@@ -37,7 +37,7 @@ Kiểm kê ban đầu theo `src/app.py` tại `dev` `8053b34`; đã cập nhật
 - [ ] P1: rà thông tin nhạy cảm trong `extra_attributes`; chặn CSV formula injection
 
 ## Ngày 20–21 – Smoke và freeze
-- [ ] P0: cache theo path, không làm mới khi DB/JSON thay đổi
+- [x] P0: cache theo path, không làm mới khi DB/JSON thay đổi (Ngày 18: khóa cache theo mtime và kích thước)
 - [ ] P0: smoke test CASE01 trong venv sạch; lệnh chạy trong README
 - [ ] P1: test tự động cho UI (hiện chưa có)
 - [ ] P1: changelog, known limits

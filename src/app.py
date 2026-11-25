@@ -6,6 +6,7 @@ Author: Quyen (Validation & Visualization Engineer)
 import json
 import sqlite3
 import sys
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src import ui_data, ui_evidence
+from src import ui_data, ui_evidence, ui_findings
 from src.report_generator import ReportGenerator
 
 DEFAULT_DATABASE = "results/CASE01/timeline.db"
@@ -29,9 +30,14 @@ STYLE = """<style>
 [data-testid="stCaptionContainer"] p {color: #475569; opacity: 1;}
 .stMarkdownBadge, [data-testid="stAlert"] p {color: #0F172A !important;}
 </style>"""
+FINDINGS_PER_PAGE = 50
 PAGE_SIZES = [25, 50, 100, 250]
 STATUS_COLORS = {"verified": "green", "disputed": "red", "synthetic": "violet"}
 TONE_COLORS = {"evidence": "blue", "inferred": "orange", "limited": "gray"}
+REVIEW_COLORS = {"Candidate": "gray", "Validated": "green", "Unresolved": "orange", "Synthetic": "violet"}
+FINDING_FILTER_KEYS = [
+    "finding_text", "finding_statuses", "finding_rules", "finding_exclude_limited", "finding_sort",
+]
 FILTER_DEFAULTS = {
     "filter_start": "",
     "filter_end": "",
@@ -57,10 +63,38 @@ def reset_filters():
 def change_database():
     st.session_state.pop("filter_case", None)
     reset_filters()
+    reset_finding_filters()
 
 
-def move_page(step):
-    st.session_state["page"] = st.session_state.get("page", 1) + step
+def move_page(step, key="page"):
+    st.session_state[key] = st.session_state.get(key, 1) + step
+
+
+def first_finding_page():
+    st.session_state["finding_page"] = 1
+
+
+def reset_finding_filters():
+    for key in FINDING_FILTER_KEYS:
+        st.session_state.pop(key, None)
+    first_finding_page()
+
+
+def file_signature(path):
+    """Change whenever the file is rewritten, so cached results cannot go stale."""
+    status = Path(path).stat()
+    return status.st_mtime_ns, status.st_size
+
+
+# Shared, read-only results: callers must not modify the returned objects.
+@st.cache_resource(max_entries=4, show_spinner="Loading findings")
+def cached_findings(path, signature, case_ids):
+    return ui_data.load_findings(path, list(case_ids))
+
+
+@st.cache_resource(max_entries=4, show_spinner="Linking findings to events")
+def cached_event_index(database, database_signature, findings_path, findings_signature, case_ids, _findings):
+    return ui_findings.load_event_index(database, _findings)
 
 
 def missing_label(value, all_label, missing):
@@ -81,7 +115,8 @@ def sidebar_sources():
         on_change=change_database, help="Opened read-only; the dashboard never changes it.",
     )
     findings = st.sidebar.text_input(
-        "Correlation findings (JSON)", value=DEFAULT_FINDINGS, key="findings"
+        "Correlation findings (JSON)", value=DEFAULT_FINDINGS, key="findings",
+        on_change=reset_finding_filters,
     )
     return database.strip(), findings.strip()
 
@@ -153,6 +188,19 @@ def sidebar_filters(summary):
     except ValueError as exc:
         st.sidebar.error(str(exc))
         return None
+
+
+def page_controls(page, page_count, state_key, prefix):
+    previous, position, following = st.columns([1, 2, 1])
+    previous.button(
+        "Previous page", disabled=page == 1, on_click=move_page, args=(-1, state_key),
+        width="stretch", key=f"{prefix}previous_page",
+    )
+    position.markdown(f"Page **{page:,}** of **{page_count:,}**")
+    following.button(
+        "Next page", disabled=page == page_count, on_click=move_page, args=(1, state_key),
+        width="stretch", key=f"{prefix}next_page",
+    )
 
 
 def field(label, value):
@@ -251,16 +299,7 @@ def render_timeline(database, filters, summary):
             "Description": st.column_config.TextColumn(width="medium"),
         },
     )
-    previous, position, following = st.columns([1, 2, 1])
-    previous.button(
-        "Previous page", disabled=result.page == 1, on_click=move_page, args=(-1,),
-        width="stretch", key="previous_page",
-    )
-    position.markdown(f"Page **{result.page:,}** of **{result.page_count:,}**")
-    following.button(
-        "Next page", disabled=result.page == result.page_count, on_click=move_page, args=(1,),
-        width="stretch", key="next_page",
-    )
+    page_controls(result.page, result.page_count, "page", "")
 
     by_index = dict(enumerate(result.events))
     selected = st.selectbox(
@@ -270,43 +309,153 @@ def render_timeline(database, filters, summary):
     render_event_detail(by_index[selected])
 
 
-def load_findings(path, filters, summary):
+def load_findings(database, path, filters, summary):
+    """Return (findings, index of cited events, note for the investigator)."""
     case_id = filters["case_id"] if filters else None
     if case_id == ui_data.NOT_RECORDED:
-        case_ids = [None]
+        case_ids = (None,)
     else:
-        case_ids = [case_id] if case_id else summary.case_ids
+        case_ids = (case_id,) if case_id else tuple(summary.case_ids)
     try:
-        findings, excluded = ui_data.load_findings(path, case_ids)
+        signature = file_signature(path)
+        findings, excluded = cached_findings(path, signature, case_ids)
+        index = cached_event_index(
+            database, file_signature(database), path, signature, case_ids, findings
+        )
     except FileNotFoundError:
-        return [], f"No findings file at `{path or '(empty path)'}`."
-    except (OSError, ValueError) as exc:
-        return [], f"Cannot read the findings file: {exc}"
+        return [], {}, f"No findings file at `{path or '(empty path)'}`."
+    except (OSError, ValueError, sqlite3.Error) as exc:
+        return [], {}, f"Cannot read the findings file: {exc}"
     note = None
     if excluded:
         note = f"{excluded:,} findings from another or unspecified case are not shown."
-    return findings, note
+    return findings, index, note
 
 
-def render_findings(findings, note):
+def finding_filters(findings):
+    statuses = sorted({ui_findings.review_status(f) for f in findings})
+    rules = sorted({rule for f in findings for rule in ui_findings.as_list(f.get("matched_rules"))})
+    # Keep only selections that the current findings file still offers.
+    for key, options in (("finding_statuses", statuses), ("finding_rules", rules)):
+        if key in st.session_state:
+            st.session_state[key] = [v for v in st.session_state[key] if v in options]
+    text_column, status_column, rule_column, sort_column = st.columns([3, 2, 2, 2])
+    text = text_column.text_input(
+        "Search findings", key="finding_text", on_change=first_finding_page,
+        placeholder="CASE01-SB0133 CASE01-JL0022",
+        help="Every word must appear in the IDs, paths, source files, references or explanation.",
+    )
+    chosen_statuses = status_column.multiselect(
+        "Review status", statuses, key="finding_statuses", placeholder="All statuses",
+        on_change=first_finding_page,
+    )
+    chosen_rules = rule_column.multiselect(
+        "Must match rules", rules, key="finding_rules", placeholder="Any rules",
+        on_change=first_finding_page,
+    )
+    sort = sort_column.selectbox(
+        "Sort by", ui_findings.SORT_ORDERS, key="finding_sort", on_change=first_finding_page
+    )
+    exclude_limited = st.checkbox(
+        "Hide findings that rely on metadata-only, registry-write or unclassified events",
+        key="finding_exclude_limited", on_change=first_finding_page,
+    )
+    return ui_findings.FindingFilter(
+        text=text, statuses=tuple(chosen_statuses), rules=tuple(chosen_rules),
+        exclude_limited=exclude_limited,
+    ), sort
+
+
+def render_findings(findings, index, note):
     if note:
         st.warning(note)
     if not findings:
         st.info("No correlation findings to show for this case.")
         return
-    st.markdown(f"**{len(findings):,}** candidate findings")
-    table = pd.DataFrame(findings)
-    columns = ["finding_id", "confidence_level", "matched_rules", "time_delta_minutes", "explanation"]
-    st.dataframe(table.reindex(columns=columns), width="stretch", hide_index=True)
-    by_id = {str(f.get("finding_id")): f for f in findings}
-    selected = st.selectbox("Finding to inspect", list(by_id))
-    detail = by_id[selected]
-    st.markdown(f"**Rules matched:** `{', '.join(detail.get('matched_rules') or [])}`")
-    for side in ("a", "b"):
-        st.markdown(f"**Event {side.upper()}:** `{detail.get(f'event_{side}_id')}`")
-        st.text(str(detail.get(f"event_{side}_desc") or ""))
-    for reference in detail.get("evidence_references") or []:
-        st.code(reference, language=None, wrap_lines=True)
+    counts = Counter(ui_findings.review_status(f) for f in findings)
+    st.markdown(
+        f"**{len(findings):,}** findings: "
+        + ", ".join(f"**{count:,}** {label}" for label, count in sorted(counts.items()))
+    )
+    st.caption(
+        "Scores rank candidates for review. They do not validate a finding; "
+        "the review status is read from the findings file."
+    )
+    criteria, sort = finding_filters(findings)
+    selected = ui_findings.select_findings(findings, index, criteria, sort)
+    if not selected:
+        st.info("No findings match these filters.")
+        st.button("Reset finding filters", on_click=reset_finding_filters)
+        return
+
+    page_count = (len(selected) + FINDINGS_PER_PAGE - 1) // FINDINGS_PER_PAGE
+    page = min(max(st.session_state.get("finding_page", 1), 1), page_count)
+    st.session_state["finding_page"] = page
+    offset = (page - 1) * FINDINGS_PER_PAGE
+    visible = selected[offset:offset + FINDINGS_PER_PAGE]
+    st.markdown(
+        f"Showing findings **{offset + 1:,}–{offset + len(visible):,}** of **{len(selected):,}**"
+    )
+    rows = [ui_findings.finding_row(finding, index) for finding in visible]
+    st.dataframe(
+        pd.DataFrame(rows, columns=ui_findings.FINDING_COLUMNS),
+        width="stretch", height=min(460, 38 + 35 * len(rows)), hide_index=True,
+        column_config={"Path": st.column_config.TextColumn(width="large")},
+    )
+    page_controls(page, page_count, "finding_page", "finding_")
+    position = st.selectbox(
+        "Finding to inspect", range(len(visible)),
+        format_func=lambda i: f"{rows[i]['Finding ID']} | {rows[i]['Event IDs']}",
+    )
+    render_finding_detail(visible[position], rows[position], index)
+
+
+def render_finding_detail(finding, row, index):
+    st.subheader("Finding detail")
+    status_column, text_column = st.columns([1, 2])
+    with status_column:
+        st.caption("Review status")
+        st.badge(row["Review status"], color=REVIEW_COLORS.get(row["Review status"], "red"))
+    with text_column:
+        st.caption("Stored validation status")
+        st.text(str(finding.get("validation_status") or ui_evidence.NOT_RECORDED_TEXT))
+    for message in ui_findings.problems(finding, index):
+        st.warning(message)
+
+    left, middle, right = st.columns(3)
+    with left:
+        field("Finding ID", row["Finding ID"])
+        field("Case ID", row["Case"])
+    with middle:
+        field("Time window (UTC)", row["Time window (UTC)"])
+        gap = row["Gap (s)"]
+        field("Time gap", "" if gap is None else f"{gap:g} seconds")
+    with right:
+        score = row["Score"]
+        level = finding.get("confidence_level") or ui_evidence.NOT_RECORDED_TEXT
+        field("Correlation score", "" if score is None else f"{score:g} ({level})")
+        field("Artifacts", row["Artifacts"])
+
+    st.markdown("**Why these events are linked**")
+    for rule in ui_findings.as_list(finding.get("matched_rules")):
+        st.text(f"{rule}: {ui_findings.RULES.get(rule, 'Rule is not documented.')}")
+    code_field("Engine explanation", str(finding.get("explanation") or ""))
+    if finding.get("investigation_note"):
+        code_field("Investigation note", str(finding["investigation_note"]))
+    references = ui_findings.as_list(finding.get("evidence_references"))
+    code_field("Evidence references", "\n".join(references))
+
+    events = ui_findings.linked_events(finding, index)
+    if not events:
+        return
+    st.markdown("**Source events**")
+    position = st.selectbox(
+        "Source event to inspect", range(len(events)),
+        format_func=lambda i: (
+            f"{events[i].event_id} | {events[i].artifact_source} | {ui_data.format_utc(events[i])}"
+        ),
+    )
+    render_event_detail(events[position])
 
 
 def render_reporting(database, filters, findings):
@@ -349,7 +498,7 @@ def main():
         st.info("This timeline database contains no events. Import a case with the pipeline first.")
         return
     filters = sidebar_filters(summary)
-    findings, findings_note = load_findings(findings_path, filters, summary)
+    findings, index, findings_note = load_findings(database, findings_path, filters, summary)
 
     timeline_tab, findings_tab, report_tab = st.tabs(
         ["Timeline", "Correlation findings", "Reporting"]
@@ -357,7 +506,7 @@ def main():
     with timeline_tab:
         render_timeline(database, filters, summary)
     with findings_tab:
-        render_findings(findings, findings_note)
+        render_findings(findings, index, findings_note)
     with report_tab:
         render_reporting(database, filters, findings)
 

@@ -437,6 +437,19 @@ class TimelineStore:
             parameters.extend([-1 if limit is None else limit, offset])
         return [self._row_to_event(row) for row in self.connection.execute(sql, parameters)]
 
+    def events_by_id(self, event_ids: Sequence[str]) -> List[ForensicEvent]:
+        """Return every stored event with one of these IDs, in any case."""
+        events: List[ForensicEvent] = []
+        for start in range(0, len(event_ids), 500):
+            chunk = list(event_ids[start:start + 500])
+            placeholders = ", ".join("?" for _ in chunk)
+            rows = self.connection.execute(
+                f"SELECT * FROM events WHERE event_id IN ({placeholders}) ORDER BY timestamp, id",
+                chunk,
+            )
+            events.extend(self._row_to_event(row) for row in rows)
+        return events
+
     def count_matching(self, **filters: Any) -> int:
         """Count every row the same filters would return from query()."""
         where, parameters = self._where(**filters)

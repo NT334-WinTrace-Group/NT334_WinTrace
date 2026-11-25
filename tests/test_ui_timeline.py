@@ -209,7 +209,7 @@ def test_no_matching_event_does_not_hide_findings(tmp_path, case01_db):
     app = run_app(case01_db, findings)
     app.text_input(key="filter_keyword").input("nothing-matches-this")
     next(b for b in app.button if b.label == "Apply filters").click().run()
-    assert "**1** candidate findings" in rendered_text(app)
+    assert "**1** findings: **1** Candidate" in rendered_text(app)
 
 
 def test_switching_database_drops_filters_of_the_old_one(tmp_path, case01_db):

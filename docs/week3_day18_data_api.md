@@ -30,6 +30,8 @@ preserved.
 - `query()` also accepts `artifacts` (any of several sources) and `offset`.
   `count_matching()` takes the same filters and returns the full row count.
 - `distinct_values()` lists stored cases, artifacts, or validation statuses.
+- `events_by_id()` returns every stored event with the given IDs, in any case;
+  callers match `case_id` themselves (UI Day 18).
 - `NOT_RECORDED` selects rows with no `case_id` / `validation_status`.
 
 ## Example
