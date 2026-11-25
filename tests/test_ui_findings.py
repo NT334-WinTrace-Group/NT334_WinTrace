@@ -10,7 +10,6 @@ from streamlit.testing.v1 import AppTest
 
 from src import ui_data, ui_findings
 from src.correlation import CorrelationEngine
-from src.pipeline import run_pipeline
 from src.schema import ForensicEvent
 from src.storage import TimelineStore
 
@@ -23,15 +22,8 @@ CANDIDATES = {
 
 
 @pytest.fixture(scope="module")
-def case01(tmp_path_factory):
-    root = tmp_path_factory.mktemp("findings")
-    run_pipeline(
-        input_file=str(ROOT / "analysis/phuc-artifacts/case01_supporting_events.csv"),
-        shellbags_file=str(ROOT / "results/case01_shellbags_events.csv"),
-        case_id="CASE01", source_label="case01-supporting-tools", case_output_dir=str(root),
-        output_file="normalized.json", database_file="timeline.db", findings_file="findings.json",
-    )
-    return str(root / "CASE01/timeline.db"), str(root / "CASE01/findings.json")
+def case01(case01_pipeline):
+    return case01_pipeline
 
 
 @pytest.fixture(scope="module")

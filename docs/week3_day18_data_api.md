@@ -32,6 +32,9 @@ preserved.
 - `distinct_values()` lists stored cases, artifacts, or validation statuses.
 - `events_by_id()` returns every stored event with the given IDs, in any case;
   callers match `case_id` themselves (UI Day 18).
+- A row that cannot be read raises `MalformedEventError` (a `ValueError`) naming
+  the event and database row. Pass a `malformed` list to `query()` or
+  `events_by_id()` to collect those messages and keep the readable rows.
 - `NOT_RECORDED` selects rows with no `case_id` / `validation_status`.
 
 ## Example

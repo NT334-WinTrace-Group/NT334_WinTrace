@@ -7,7 +7,7 @@ import hashlib
 import json
 import sqlite3
 from pathlib import Path
-from dataclasses import replace
+from dataclasses import fields, replace
 from typing import Any, Iterable, List, Optional, Sequence, Tuple
 
 from src.schema import ForensicEvent
@@ -15,8 +15,14 @@ from src.schema import ForensicEvent
 
 PROVENANCE_FIELDS = ("timestamp_type", "evidence_reference", "validation_status", "case_id")
 
+NULLABLE_COLUMNS = {"user_sid", "username", *PROVENANCE_FIELDS}
+
 # Filter value selecting rows whose case_id / validation_status was never recorded.
 NOT_RECORDED = "<not recorded>"
+
+
+class MalformedEventError(ValueError):
+    """Raised when a stored row cannot be turned into a valid event."""
 
 
 class TimelineStore:
@@ -43,10 +49,7 @@ class TimelineStore:
             columns = {
                 row["name"] for row in self.connection.execute("PRAGMA table_info(events)")
             }
-            required = {
-                "event_id", "timestamp", "artifact_source", "target_path",
-                "extra_attributes", *PROVENANCE_FIELDS,
-            }
+            required = {"id", *(field.name for field in fields(ForensicEvent))}
             missing = sorted(required - columns)
             if missing:
                 raise ValueError(
@@ -421,7 +424,13 @@ class TimelineStore:
         validation_status: Optional[str] = None,
         artifacts: Optional[Sequence[str]] = None,
         offset: int = 0,
+        malformed: Optional[List[str]] = None,
     ) -> List[ForensicEvent]:
+        """Return matching events in time order.
+
+        A row that cannot be read raises MalformedEventError, unless a
+        ``malformed`` list is given to collect the messages instead.
+        """
         where, parameters = self._where(
             start=start, end=end, artifact=artifact, keyword=keyword,
             case_id=case_id, path=path, validation_status=validation_status,
@@ -435,9 +444,24 @@ class TimelineStore:
         if limit is not None or offset:
             sql += " LIMIT ? OFFSET ?"
             parameters.extend([-1 if limit is None else limit, offset])
-        return [self._row_to_event(row) for row in self.connection.execute(sql, parameters)]
+        return self._read_events(self.connection.execute(sql, parameters), malformed)
 
-    def events_by_id(self, event_ids: Sequence[str]) -> List[ForensicEvent]:
+    def _read_events(
+        self, rows: Iterable[sqlite3.Row], malformed: Optional[List[str]] = None
+    ) -> List[ForensicEvent]:
+        events = []
+        for row in rows:
+            try:
+                events.append(self._row_to_event(row))
+            except MalformedEventError as exc:
+                if malformed is None:
+                    raise
+                malformed.append(str(exc))
+        return events
+
+    def events_by_id(
+        self, event_ids: Sequence[str], malformed: Optional[List[str]] = None
+    ) -> List[ForensicEvent]:
         """Return every stored event with one of these IDs, in any case."""
         events: List[ForensicEvent] = []
         for start in range(0, len(event_ids), 500):
@@ -447,7 +471,7 @@ class TimelineStore:
                 f"SELECT * FROM events WHERE event_id IN ({placeholders}) ORDER BY timestamp, id",
                 chunk,
             )
-            events.extend(self._row_to_event(row) for row in rows)
+            events.extend(self._read_events(rows, malformed))
         return events
 
     def count_matching(self, **filters: Any) -> int:
@@ -462,7 +486,8 @@ class TimelineStore:
         if column not in {"case_id", "artifact_source", "validation_status"}:
             raise ValueError(f"Unsupported column: {column!r}")
         rows = self.connection.execute(f"SELECT DISTINCT {column} FROM events")
-        values = {row[0] or None for row in rows}
+        # Non-text values belong to malformed rows and cannot be offered as filters.
+        values = {row[0] or None for row in rows if row[0] is None or isinstance(row[0], str)}
         return sorted(values, key=lambda value: (value is None, value or ""))
 
     @staticmethod
@@ -483,11 +508,25 @@ class TimelineStore:
     @staticmethod
     def _row_to_event(row: sqlite3.Row) -> ForensicEvent:
         data = dict(row)
-        data["extra_attributes"] = json.loads(data["extra_attributes"])
-        for field in PROVENANCE_FIELDS:
-            if data[field] is None:
-                data[field] = data["extra_attributes"].get(field)
-        return ForensicEvent.from_dict(data)
+        try:
+            for field in fields(ForensicEvent):
+                value = data[field.name]
+                if value is None and field.name not in NULLABLE_COLUMNS:
+                    raise ValueError(f"{field.name} is missing")
+                if value is not None and not isinstance(value, str):
+                    raise ValueError(f"{field.name} is not text")
+            data["extra_attributes"] = json.loads(data["extra_attributes"])
+            if not isinstance(data["extra_attributes"], dict):
+                raise ValueError("extra_attributes is not a JSON object")
+            for name in PROVENANCE_FIELDS:
+                if data[name] is None:
+                    data[name] = data["extra_attributes"].get(name)
+            return ForensicEvent.from_dict(data)
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise MalformedEventError(
+                f"Event {data.get('event_id')!r} (database row {data.get('id')}) "
+                f"cannot be read: {exc}"
+            ) from exc
 
     def count(self) -> int:
         return int(self.connection.execute("SELECT COUNT(*) FROM events").fetchone()[0])

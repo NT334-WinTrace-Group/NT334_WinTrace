@@ -102,6 +102,7 @@ class TimelinePage:
     page_count: int
     first: int
     last: int
+    malformed: List[str]
 
 
 def load_summary(database_path: str) -> DatabaseSummary:
@@ -125,20 +126,27 @@ def load_page(
         page_count = max(1, (total + page_size - 1) // page_size)
         page = min(max(page, 1), page_count)
         offset = (page - 1) * page_size
-        events = store.query(**filters, limit=page_size, offset=offset)
+        malformed: List[str] = []
+        events = store.query(
+            **filters, limit=page_size, offset=offset, malformed=malformed
+        )
     return TimelinePage(
         events=events,
         total=total,
         page=page,
         page_count=page_count,
-        first=offset + 1 if events else 0,
-        last=offset + len(events),
+        first=offset + 1 if total else 0,
+        last=offset + len(events) + len(malformed),
+        malformed=malformed,
     )
 
 
-def load_matching(database_path: str, filters: Dict[str, Any]) -> List[ForensicEvent]:
+def load_matching(
+    database_path: str, filters: Dict[str, Any], malformed: Optional[List[str]] = None
+) -> List[ForensicEvent]:
+    """Load every matching event; unreadable rows raise unless they are collected."""
     with TimelineStore(database_path, read_only=True) as store:
-        return store.query(**filters)
+        return store.query(**filters, malformed=malformed)
 
 
 def load_findings(
@@ -148,6 +156,10 @@ def load_findings(
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(data, list) or not all(isinstance(item, dict) for item in data):
         raise ValueError("The findings file must contain a JSON array of objects.")
+    for item in data:
+        for name in ("finding_id", "case_id"):
+            if not isinstance(item.get(name), (str, type(None))):
+                raise ValueError(f"A finding has a {name} that is not text.")
     allowed = {case_id or None for case_id in case_ids}
     kept = [item for item in data if (item.get("case_id") or None) in allowed]
     return kept, len(data) - len(kept)

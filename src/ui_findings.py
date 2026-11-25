@@ -63,12 +63,14 @@ def event_key(finding: Finding, event_id: str) -> EventKey:
     return (finding.get("case_id") or None, event_id)
 
 
-def load_event_index(database_path: str, findings: Sequence[Finding]) -> EventIndex:
+def load_event_index(
+    database_path: str, findings: Sequence[Finding], malformed: Optional[List[str]] = None
+) -> EventIndex:
     """Find every event the findings cite, regardless of timeline filters."""
     wanted = sorted({eid for finding in findings for eid in event_ids(finding)})
     index: EventIndex = {}
     with TimelineStore(database_path, read_only=True) as store:
-        for event in store.events_by_id(wanted):
+        for event in store.events_by_id(wanted, malformed):
             index.setdefault((event.case_id or None, event.event_id), []).append(event)
     return index
 

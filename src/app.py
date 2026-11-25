@@ -97,7 +97,8 @@ def cached_findings(path, signature, case_ids):
 
 @st.cache_resource(max_entries=4, show_spinner="Linking findings to events")
 def cached_event_index(database, database_signature, findings_path, findings_signature, case_ids, _findings):
-    return ui_findings.load_event_index(database, _findings)
+    malformed = []
+    return ui_findings.load_event_index(database, _findings, malformed), len(malformed)
 
 
 def missing_label(value, all_label, missing):
@@ -279,7 +280,11 @@ def render_timeline(database, filters, summary):
         st.error(f"Cannot load timeline events: {exc}")
         return
     st.session_state["page"] = result.page
-    if not result.events:
+    if result.malformed:
+        st.error(f"{len(result.malformed):,} stored events on this page cannot be read.")
+        for message in result.malformed[:MAX_LISTED_ERRORS]:
+            st.text(message)
+    if not result.total:
         st.info("No events match these filters.")
         st.markdown(
             f"The database holds {summary.total:,} events. Widen the UTC range, "
@@ -303,6 +308,8 @@ def render_timeline(database, filters, summary):
         },
     )
     page_controls(result.page, result.page_count, "page", "")
+    if not result.events:
+        return
 
     by_index = dict(enumerate(result.events))
     selected = st.selectbox(
@@ -322,17 +329,19 @@ def load_findings(database, path, filters, summary):
     try:
         signature = file_signature(path)
         findings, excluded = cached_findings(path, signature, case_ids)
-        index = cached_event_index(
+        index, unreadable = cached_event_index(
             database, file_signature(database), path, signature, case_ids, findings
         )
     except FileNotFoundError:
         return [], {}, f"No findings file at `{path or '(empty path)'}`."
     except (OSError, ValueError, sqlite3.Error) as exc:
         return [], {}, f"Cannot read the findings file: {exc}"
-    note = None
+    notes = []
     if excluded:
-        note = f"{excluded:,} findings from another or unspecified case are not shown."
-    return findings, index, note
+        notes.append(f"{excluded:,} findings from another or unspecified case are not shown.")
+    if unreadable:
+        notes.append(f"{unreadable:,} cited events cannot be read from the database.")
+    return findings, index, " ".join(notes)
 
 
 def finding_filters(findings):
@@ -497,11 +506,19 @@ def csv_bytes(text):
 def render_event_export(database, filters, findings, skip_invalid, stamp):
     st.subheader("Filtered timeline")
     signature = file_signature(database)
-    events = ui_data.load_matching(database, filters)
+    malformed = []
+    events = ui_data.load_matching(database, filters, malformed)
     source = ui_export.source_info(database)
     if file_signature(database) != signature:
         st.error("The database changed while the export was prepared. Prepare it again.")
         return
+    if malformed:
+        st.error(f"{len(malformed):,} stored events cannot be read.")
+        for message in malformed[:MAX_LISTED_ERRORS]:
+            st.text(message)
+        if not skip_invalid:
+            st.markdown("Select **Leave out invalid records** to export the readable events.")
+            return
     if not events:
         st.info("No matching events to export.")
         return
@@ -512,6 +529,7 @@ def render_event_export(database, filters, findings, skip_invalid, stamp):
     if checked is None:
         return
     events, excluded = checked
+    excluded = [{"record": None, "problem": message} for message in malformed] + excluded
     if not events:
         st.info("No valid events remain to export.")
         return
