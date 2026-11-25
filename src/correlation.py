@@ -33,6 +33,14 @@ LOW_PRECISION_TIMESTAMP_TYPES = {
 }
 
 
+def normalize_case_id(case_id: Optional[str]) -> Optional[str]:
+    """Treat absent, empty, and whitespace-only case IDs as the same missing value."""
+    if case_id is None:
+        return None
+    normalized = case_id.strip()
+    return normalized or None
+
+
 def _is_bagmru_path(path: str) -> bool:
     """Check if a path looks like a BagMRU absolute path (starts with Desktop\\)."""
     if not path:
@@ -231,20 +239,31 @@ class CorrelationEngine:
 
     @staticmethod
     def _finding_id(event_a: ForensicEvent, event_b: ForensicEvent) -> str:
-        case_id = event_a.case_id or "UNSPECIFIED"
+        case_id = normalize_case_id(event_a.case_id)
         event_ids = sorted((event_a.event_id, event_b.event_id))
         identity = json.dumps((case_id, event_ids), ensure_ascii=True, separators=(",", ":"))
         digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
-        return f"FIND-{quote(case_id, safe='')}-{digest}"
+        return f"FIND-{quote(case_id or 'UNSPECIFIED', safe='')}-{digest}"
 
     def correlate(self, events: List[ForensicEvent]) -> List[CorrelationFinding]:
         findings: List[CorrelationFinding] = []
+        seen_event_ids = set()
+        for event in events:
+            case_id = normalize_case_id(event.case_id)
+            identity = (case_id, event.event_id)
+            if identity in seen_event_ids:
+                case_label = case_id if case_id is not None else "Unspecified"
+                raise ValueError(
+                    f"Duplicate event_id {event.event_id!r} in case {case_label!r}"
+                )
+            seen_event_ids.add(identity)
 
         # Sort events chronologically
         sorted_events = sorted(events, key=lambda e: e.dt)
 
         for event_a, event_b in combinations(sorted_events, 2):
-            if event_a.case_id != event_b.case_id:
+            case_id = normalize_case_id(event_a.case_id)
+            if case_id != normalize_case_id(event_b.case_id):
                 continue
 
             delta_seconds = abs((event_a.dt - event_b.dt).total_seconds())
@@ -350,7 +369,7 @@ class CorrelationEngine:
                     event_ids=[event_a.event_id, event_b.event_id],
                     investigation_note=" | ".join(investigation_notes) if investigation_notes else None,
                     evidence_references=evidence_refs,
-                    case_id=event_a.case_id,
+                    case_id=case_id,
                 ))
 
         return findings
