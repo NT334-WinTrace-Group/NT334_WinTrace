@@ -144,3 +144,52 @@ def test_r05_requires_interaction_semantics_and_strict_temporal_order():
     delete_request = event("D", "2026-10-25T02:01:00Z", "EVTX", path,
                            "Delete access requested", "Object Access (Delete Mask)")
     assert "R05" not in finding_for([accessed, delete_request], "A", "D").matched_rules
+
+def test_r04_prefetch_files_loaded_user_supports_direct_file_link():
+    """R04 requires a direct file reference, not just temporal proximity."""
+    doc = (
+        r"C:\Users\informant\Desktop"
+        r"\Resignation_Letter_(Iaman_Informant).docx"
+    )
+
+    # Prefetch: WINWORD execution
+    pf = event(
+        "PF-C5",
+        "2015-03-25T15:24:48+00:00",
+        "Prefetch",
+        r"C:\Program Files\Microsoft Office\Office15\WINWORD.EXE",
+        "WINWORD execution",
+    )
+    pf.timestamp_type = "Prefetch_LastRun"
+    pf.extra_attributes["files_loaded_user"] = [doc]
+
+    # LNK: same document, 4 minutes 20 seconds later
+    lnk = event(
+        "LNK-C5",
+        "2015-03-25T15:29:08+00:00",
+        "LNK",
+        doc,
+        "Shortcut metadata",
+    )
+
+    finding = finding_for([pf, lnk], "PF-C5", "LNK-C5")
+
+    assert finding is not None
+    assert "R04" in finding.matched_rules
+    assert "R03" in finding.matched_rules
+    assert set(finding.event_ids) == {"PF-C5", "LNK-C5"}
+
+    # Negative control: unrelated DOCX must not receive R04
+    unrelated = event(
+        "LNK-OTHER",
+        "2015-03-25T15:29:08+00:00",
+        "LNK",
+        r"C:\Other\unrelated.docx",
+        "Unrelated shortcut",
+    )
+
+    other = finding_for(
+        [pf, unrelated], "PF-C5", "LNK-OTHER"
+    )
+
+    assert other is None or "R04" not in other.matched_rules
