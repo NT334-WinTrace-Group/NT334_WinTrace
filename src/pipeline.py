@@ -15,7 +15,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.normalizer import PlasoNormalizer
+from src.normalizer import PlasoNormalizer, ShellBagsNormalizer
+from src.correlation import CorrelationEngine
 from src.storage import TimelineStore
 from src.timeline_parser import TimelineParser, TargetedFilter
 
@@ -38,16 +39,25 @@ def run_pipeline(
     shellbags_file: Optional[str] = None,
     database_file: Optional[str] = None,
     error_log: Optional[str] = None,
+    case_id: Optional[str] = None,
+    findings_file: Optional[str] = None,
+    correlation_window: float = 5.0,
 ):
     print_banner()
     print(f"[*] Loading and normalizing raw Plaso output from: {input_file}")
 
     # Step 1: Normalize raw Plaso input
-    events, errors = PlasoNormalizer.normalize_file_with_report(input_file, "plaso")
+    events, errors = PlasoNormalizer.normalize_file_with_report(
+        input_file, "plaso", case_id=case_id
+    )
     if shellbags_file:
-        shellbag_events, shellbag_errors = PlasoNormalizer.normalize_file_with_report(
-            shellbags_file, "shellbags"
+        shellbag_events, shellbag_errors = ShellBagsNormalizer.normalize_file_with_report(
+            shellbags_file
         )
+        for event in shellbag_events:
+            event.extra_attributes.setdefault("source_label", "shellbags")
+            if case_id:
+                event.case_id = case_id
         events.extend(shellbag_events)
         errors.extend(shellbag_errors)
         print(f"[+] Imported {len(shellbag_events)} ShellBags events.")
@@ -89,6 +99,22 @@ def run_pipeline(
                 f"[+] SQLite timeline: {inserted} new events, "
                 f"{store.count()} total events at {database_file}"
             )
+
+    if findings_file:
+        engine = CorrelationEngine(window_minutes=correlation_window)
+        findings = []
+        case_groups = {}
+        for event in events:
+            case_groups.setdefault(event.case_id or "Unspecified", []).append(event)
+        for _, case_events in sorted(case_groups.items()):
+            findings.extend(engine.correlate(case_events))
+
+        findings_path = Path(findings_file)
+        findings_path.parent.mkdir(parents=True, exist_ok=True)
+        CorrelationEngine.export_findings_json(findings, str(findings_path))
+        print(
+            f"[+] Correlation findings: {len(findings)} candidates at {findings_path}"
+        )
 
     # Step 4: Summary Statistics Dashboard
     artifact_counts = Counter(e.artifact_source for e in events)
@@ -143,6 +169,9 @@ def main():
     parser.add_argument("--shellbags", default=None, help="CASE01 ShellBags CSV to import")
     parser.add_argument("--database", default=None, help="SQLite database output path")
     parser.add_argument("--error-log", default=None, help="JSON file for rejected records")
+    parser.add_argument("--case-id", default=None, help="Case identifier applied to all imported events")
+    parser.add_argument("--findings", default=None, help="JSON path for correlation findings")
+    parser.add_argument("--correlation-window", type=float, default=5.0, help="Correlation time window in minutes")
 
     args = parser.parse_args()
     run_pipeline(
@@ -154,6 +183,9 @@ def main():
         shellbags_file=args.shellbags,
         database_file=args.database,
         error_log=args.error_log,
+        case_id=args.case_id,
+        findings_file=args.findings,
+        correlation_window=args.correlation_window,
     )
 
 

@@ -144,9 +144,6 @@ def test_value_checks_are_kept_after_downgrade(events):
     assert all("ShellBags Explorer" in e.extra_attributes["value_cross_checked_by"] for e in downgraded)
 
 
-@requires_schema_v2
-def test_unc_target_path_keeps_double_backslash(events):
-    """Yêu cầu schema v2: đường dẫn UNC giữ nguyên tiền tố \\\\host.
-    Phụ thuộc bản sửa normalize_windows_path của Nam (nhánh nam-week2-v2)."""
+def test_unc_target_path_survives_normalization(events):
     e = next(e for e in events if e.event_id == "CASE01-SB0033")
     assert e.target_path == "\\\\10.11.11.128\\secured_drive\\Secret Project Data\\design"
