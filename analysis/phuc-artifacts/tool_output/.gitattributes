@@ -1,0 +1,3 @@
+# Output gốc của tool: giữ nguyên byte (CRLF) để SHA-256 khớp giá trị đã công bố.
+# Không để git đổi ký tự xuống dòng.
+* -text

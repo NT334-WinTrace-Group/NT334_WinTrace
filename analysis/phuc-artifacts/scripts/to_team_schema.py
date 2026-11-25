@@ -25,9 +25,12 @@ import csv
 import json
 import re
 
-TEAM_FIELDS = ["event_id", "timestamp", "timestamp_desc", "artifact_source", "source_file",
-               "target_path", "message", "data_type", "parser", "user_sid", "username",
-               "confidence_level", "extra_attributes"]
+# Schema v2 (docs/event_schema.md §2): timestamp_type, evidence_reference, validation_status, case_id
+# là cột chính; vẫn giữ bản sao trong extra_attributes để tương thích ngược.
+TEAM_FIELDS = ["event_id", "timestamp", "timestamp_desc", "timestamp_type", "artifact_source",
+               "source_file", "target_path", "evidence_reference", "message", "data_type", "parser",
+               "user_sid", "username", "confidence_level", "validation_status", "case_id",
+               "extra_attributes"]
 
 # timestamp_type -> (timestamp_desc theo docs/event_schema.md §3, semantic_class, precision)
 TS_META = {
@@ -101,6 +104,7 @@ def main():
     ap.add_argument("-o", "--output", default="case01_shellbags_events.csv")
     ap.add_argument("--username", default="")
     ap.add_argument("--user-sid", default="")
+    ap.add_argument("--case-id", default="CASE01")
     ap.add_argument("--user-profile", default="C:\\Users\\informant",
                     help="Thư mục profile của user sở hữu hive, dùng để suy ra path Desktop")
     ap.add_argument("--twin-window", type=int, default=60,
@@ -145,6 +149,11 @@ def main():
             "semantic_class": sem,
             "is_user_activity": sem == "user_interaction",
             "timestamp_precision": precision,
+            # Căn cứ của semantic_class: MRU 0 chỉ là DIỄN GIẢI (kế hoạch tuần 3), không phải ground truth.
+            "semantic_basis": {"ShellBag_FirstInteracted": "child_key_creation",
+                               "ShellBag_LastInteracted": "mru0_inference"}.get(
+                ts_type, "mru0_inference" if (ts_type == "ShellBag_KeyLastWrite" and mru == "0")
+                else "parent_key_write" if ts_type == "ShellBag_KeyLastWrite" else "shell_item_metadata"),
             "evidence_reference": r["evidence_reference"],
             "validation_status": r["validation_status"],
             "hive": r["source_file"],
@@ -167,7 +176,16 @@ def main():
             if ts_type == "ShellBag_KeyLastWrite" else 1,
         }
         if ref.get("verified_by"):
-            extra["verified_by"] = ref["verified_by"]
+            # Giá trị timestamp đã khớp công cụ độc lập. Với event metadata, đây KHÔNG phải
+            # xác minh hành động -> validation_status vẫn có thể là "unverified" (chính sách tuần 3).
+            extra["value_cross_checked_by"] = ref["verified_by"]
+            if r["validation_status"] != "verified":
+                extra["verification_note"] = (
+                    "Giá trị khớp công cụ độc lập nhưng event chỉ là "
+                    + ("target metadata" if sem == "target_metadata" else "registry write không gán được")
+                    + " nên không gán verified (week3_evidence_inventory.md §4)")
+            else:
+                extra["verified_by"] = ref["verified_by"]
         out.append({
             "event_id": r["event_id"],
             "timestamp": r["timestamp_utc"][:-1] + "+00:00" if r["timestamp_utc"].endswith("Z") else r["timestamp_utc"],
@@ -181,6 +199,10 @@ def main():
             "user_sid": args.user_sid,
             "username": args.username,
             "confidence_level": r["confidence"].upper(),
+            "timestamp_type": ts_type,
+            "evidence_reference": r["evidence_reference"],
+            "validation_status": r["validation_status"],
+            "case_id": args.case_id,
             "extra_attributes": extra,
         })
 
