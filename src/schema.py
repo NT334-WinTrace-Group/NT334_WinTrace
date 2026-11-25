@@ -97,7 +97,7 @@ def parse_iso_utc(timestamp_str: str) -> datetime:
     if not timestamp_str:
         raise ValueError("Timestamp string cannot be empty")
     dt = datetime.fromisoformat(timestamp_str)
-    if dt.tzinfo is None:
+    if dt.tzinfo is None or dt.utcoffset() is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
 
@@ -201,6 +201,7 @@ class ForensicEvent:
             self._dt = parse_iso_utc(self.timestamp)
         except Exception as e:
             raise ValueError(f"Invalid timestamp '{self.timestamp}' in event {self.event_id}: {e}")
+        self.timestamp = self._dt.isoformat()
 
         # Normalize target_path
         self.target_path = normalize_windows_path(self.target_path)

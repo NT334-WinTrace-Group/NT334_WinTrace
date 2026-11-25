@@ -49,8 +49,15 @@ class TimelineParser:
             raise FileNotFoundError(f"Timeline file not found: {json_path}")
 
         with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            for item in data:
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid timeline JSON: {exc}") from exc
+            if not isinstance(data, list):
+                raise ValueError("Timeline JSON must contain a list of events")
+            for index, item in enumerate(data, start=1):
+                if not isinstance(item, dict):
+                    raise ValueError(f"Timeline JSON event {index} must be an object")
                 events.append(ForensicEvent.from_dict(item))
         return events
 
@@ -65,15 +72,22 @@ class TimelineParser:
         with open(path, "r", encoding="utf-8", newline="") as f:
             reader = csv.DictReader(f)
             idx = 1
-            for row in reader:
+            for record_number, row in enumerate(reader, start=2):
                 # Handle standard WinTrace CSV format or Plaso psort format
-                event_id = row.get("event_id", f"EVT-{idx:04d}")
+                event_id = row.get("event_id") or f"EVT-{idx:04d}"
                 raw_time = row.get("timestamp") or row.get("datetime")
                 if not raw_time:
-                    continue
+                    raise ValueError(
+                        f"Missing timestamp at CSV record {record_number}"
+                    )
 
                 # Parse timestamp to ISO UTC string
-                dt = parse_iso_utc(raw_time)
+                try:
+                    dt = parse_iso_utc(raw_time)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Invalid timestamp at CSV record {record_number}: {exc}"
+                    ) from exc
                 iso_time = dt.isoformat()
 
                 timestamp_desc = row.get("timestamp_desc", "Unknown")
@@ -103,8 +117,14 @@ class TimelineParser:
                 if extra_raw and extra_raw.strip():
                     try:
                         extra_attributes = json.loads(extra_raw)
-                    except (json.JSONDecodeError, TypeError):
-                        pass
+                    except (json.JSONDecodeError, TypeError) as exc:
+                        raise ValueError(
+                            f"Invalid extra_attributes JSON at CSV record {record_number}: {exc}"
+                        ) from exc
+                    if not isinstance(extra_attributes, dict):
+                        raise ValueError(
+                            f"extra_attributes at CSV record {record_number} must be an object"
+                        )
                 raw_path = row.get("raw_path") or extra_attributes.get("raw_path") or target_path
                 if raw_path:
                     extra_attributes.setdefault("raw_path", raw_path)

@@ -11,7 +11,12 @@ import csv
 import json
 import re
 
-from src.schema import ForensicEvent, normalize_windows_path, parse_iso_utc
+from src.schema import (
+    VALID_ARTIFACTS,
+    ForensicEvent,
+    normalize_windows_path,
+    parse_iso_utc,
+)
 
 
 PLASO_TIMESTAMP_TYPE_MAP = {
@@ -164,10 +169,13 @@ class PlasoNormalizer:
             or raw_row.get("timestamp_utc")
             or ""
         )
-        dt = parse_iso_utc(raw_time)
+        try:
+            dt = parse_iso_utc(raw_time)
+        except ValueError as exc:
+            raise ValueError(f"Invalid timestamp {raw_time!r}: {exc}") from exc
         iso_timestamp = dt.isoformat()
 
-        parser = raw_row.get("parser", "generic")
+        parser = (raw_row.get("parser") or "generic").strip()
         source = raw_row.get("source", "")
         source_long = raw_row.get("source_long", "")
         message = (raw_row.get("message") or raw_row.get("description") or "").strip()
@@ -175,9 +183,19 @@ class PlasoNormalizer:
         artifact_hint = raw_row.get("artifact_source") or raw_row.get("artifact_type", "")
         target_hint = raw_row.get("target_path") or raw_row.get("object_path", "")
 
-        artifact_source = artifact_hint or cls.detect_artifact_source(
-            parser, source, source_long, message
-        )
+        if parser.strip().casefold() == "filestat":
+            artifact_source = "Generic"
+        elif artifact_hint:
+            known_artifacts = {artifact.casefold(): artifact for artifact in VALID_ARTIFACTS}
+            known_artifacts["generic"] = "Generic"
+            try:
+                artifact_source = known_artifacts[artifact_hint.strip().casefold()]
+            except KeyError as exc:
+                raise ValueError(f"Unsupported artifact source: {artifact_hint!r}") from exc
+        else:
+            artifact_source = cls.detect_artifact_source(
+                parser, source, source_long, message
+            )
         extra_attrs = cls.extract_extra_attributes(message, artifact_source)
         raw_extra = raw_row.get("extra_attributes")
         if raw_extra:
@@ -263,7 +281,7 @@ class PlasoNormalizer:
                     if source_label:
                         event.extra_attributes.setdefault("source_label", source_label)
                     events.append(event)
-                except Exception as e:
+                except (TypeError, ValueError) as e:
                     errors.append({"record": idx, "error": str(e), "row": dict(row)})
                 idx += 1
         
@@ -300,7 +318,7 @@ class ShellBagsNormalizer:
                 try:
                     event = cls._normalize_row(row)
                     events.append(event)
-                except Exception as e:
+                except (TypeError, ValueError) as e:
                     errors.append({"record": line_no, "error": str(e), "row": dict(row)})
 
         if errors:
@@ -315,10 +333,11 @@ class ShellBagsNormalizer:
         if extra_raw and extra_raw.strip():
             try:
                 parsed_extra = json.loads(extra_raw)
-                if isinstance(parsed_extra, dict):
-                    extra_dict = parsed_extra
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid extra_attributes JSON: {exc}") from exc
+            if not isinstance(parsed_extra, dict):
+                raise ValueError("extra_attributes must contain a JSON object")
+            extra_dict = parsed_extra
 
         provenance = _read_provenance(row, extra_dict)
         for field in PROVENANCE_FIELDS:
@@ -333,10 +352,18 @@ class ShellBagsNormalizer:
         if raw_path:
             extra_dict.setdefault("raw_path", raw_path)
         event_id = row.get("event_id", "")
+        artifact_source = row.get("artifact_source") or row.get("artifact_type") or "ShellBags"
+        if artifact_source.casefold() != "shellbags":
+            raise ValueError(
+                f"Unsupported artifact source for ShellBags input: {artifact_source!r}"
+            )
         provenance["case_id"] = provenance["case_id"] or _legacy_case_id(event_id)
 
         raw_time = row.get("timestamp") or row.get("timestamp_utc") or ""
-        dt = parse_iso_utc(raw_time)
+        try:
+            dt = parse_iso_utc(raw_time)
+        except ValueError as exc:
+            raise ValueError(f"Invalid timestamp {raw_time!r}: {exc}") from exc
         iso_timestamp = dt.isoformat()
 
         return ForensicEvent(
@@ -344,7 +371,7 @@ class ShellBagsNormalizer:
             timestamp=iso_timestamp,
             timestamp_desc=(row.get("timestamp_desc")
                             or SHELLBAGS_TIMESTAMP_DESC_MAP.get(provenance["timestamp_type"], "Unknown")),
-            artifact_source=row.get("artifact_source") or row.get("artifact_type") or "ShellBags",
+            artifact_source="ShellBags",
             source_file=row.get("source_file", ""),
             target_path=row.get("target_path") or row.get("object_path") or "",
             message=row.get("message") or row.get("description") or "",

@@ -4,7 +4,10 @@ End-to-end prototype for ingesting, normalizing, filtering, and exporting Plaso 
 """
 
 import argparse
+import csv
 import json
+import re
+import sqlite3
 import sys
 from collections import Counter
 from pathlib import Path
@@ -17,8 +20,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.normalizer import PlasoNormalizer, ShellBagsNormalizer
 from src.correlation import CorrelationEngine
+from src.schema import VALID_ARTIFACTS
 from src.storage import TimelineStore
 from src.timeline_parser import TimelineParser, TargetedFilter
+
+
+class PipelineInputError(ValueError):
+    """Raised when an input file cannot produce a complete valid event set."""
 
 
 def print_banner():
@@ -43,7 +51,35 @@ def run_pipeline(
     findings_file: Optional[str] = None,
     correlation_window: float = 5.0,
     source_label: Optional[str] = "plaso",
+    case_output_dir: Optional[str] = None,
 ):
+    if case_output_dir:
+        if not case_id or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", case_id):
+            raise PipelineInputError(
+                "--output-dir requires a safe --case-id (letters, digits, dot, underscore, hyphen)"
+            )
+        case_directory = Path(case_output_dir) / case_id
+        case_directory.mkdir(parents=True, exist_ok=True)
+
+        def case_output(path: Optional[str], default_name: Optional[str] = None) -> Optional[str]:
+            if path is None and default_name is None:
+                return None
+            filename = Path(path).name if path is not None else default_name
+            return str(case_directory / filename)
+
+        output_file = case_output(output_file)
+        database_file = case_output(database_file)
+        findings_file = case_output(findings_file)
+        error_log = case_output(error_log, "errors.json")
+
+        output_paths = [
+            Path(path).resolve()
+            for path in (output_file, database_file, findings_file, error_log)
+            if path is not None
+        ]
+        if len(output_paths) != len(set(output_paths)):
+            raise PipelineInputError("Case output files must have distinct names.")
+
     print_banner()
     print(f"[*] Loading and normalizing {source_label or 'event'} CSV from: {input_file}")
 
@@ -59,6 +95,11 @@ def run_pipeline(
             event.extra_attributes.setdefault("source_label", "shellbags")
             if case_id:
                 event.case_id = case_id
+        if any(event.artifact_source == "ShellBags" for event in events):
+            raise PipelineInputError(
+                "ShellBags events were supplied by both --input and --shellbags; "
+                "import one canonical ShellBags event source."
+            )
         events.extend(shellbag_events)
         errors.extend(shellbag_errors)
         print(f"[+] Imported {len(shellbag_events)} ShellBags events.")
@@ -68,7 +109,13 @@ def run_pipeline(
             error_path.parent.mkdir(parents=True, exist_ok=True)
             error_path.write_text(json.dumps(errors, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"[WARNING] Records rejected during normalization: {len(errors)}")
+        first_error = errors[0]["error"]
+        raise PipelineInputError(
+            f"Rejected {len(errors)} malformed input record(s); first error: {first_error}"
+        )
     total_ingested = len(events)
+    if total_ingested == 0:
+        raise PipelineInputError("Input files contained no valid events.")
     print(f"[+] Successfully normalized {total_ingested} forensic events.")
 
     # Step 2: Optional Targeted Filtering
@@ -78,6 +125,12 @@ def run_pipeline(
         print(f"[+] Events after user filter: {len(events)}")
 
     if filter_artifact:
+        allowed_artifacts = {artifact.casefold() for artifact in VALID_ARTIFACTS}
+        allowed_artifacts.add("generic")
+        if filter_artifact.casefold() not in allowed_artifacts:
+            raise PipelineInputError(
+                f"Unsupported artifact filter: {filter_artifact!r}"
+            )
         print(f"[*] Applying filter for artifact: {filter_artifact}")
         events = TargetedFilter.filter_by_artifacts(events, artifacts=[filter_artifact])
         print(f"[+] Events after artifact filter: {len(events)}")
@@ -172,6 +225,11 @@ def main():
     parser.add_argument("--error-log", default=None, help="JSON file for rejected records")
     parser.add_argument("--case-id", default=None, help="Case identifier applied to all imported events")
     parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Case output root; writes all requested outputs under <root>/<case-id>",
+    )
+    parser.add_argument(
         "--source-label",
         default="plaso",
         help="Provenance label for the primary event CSV (default: plaso)",
@@ -180,21 +238,34 @@ def main():
     parser.add_argument("--correlation-window", type=float, default=5.0, help="Correlation time window in minutes")
 
     args = parser.parse_args()
-    run_pipeline(
-        input_file=args.input,
-        output_file=args.output,
-        output_format=args.format,
-        filter_user=args.user,
-        filter_artifact=args.artifact,
-        shellbags_file=args.shellbags,
-        database_file=args.database,
-        error_log=args.error_log,
-        case_id=args.case_id,
-        findings_file=args.findings,
-        correlation_window=args.correlation_window,
-        source_label=args.source_label,
-    )
+    try:
+        run_pipeline(
+            input_file=args.input,
+            output_file=args.output,
+            output_format=args.format,
+            filter_user=args.user,
+            filter_artifact=args.artifact,
+            shellbags_file=args.shellbags,
+            database_file=args.database,
+            error_log=args.error_log,
+            case_id=args.case_id,
+            findings_file=args.findings,
+            correlation_window=args.correlation_window,
+            source_label=args.source_label,
+            case_output_dir=args.output_dir,
+        )
+        return 0
+    except (
+        PipelineInputError,
+        FileNotFoundError,
+        OSError,
+        ValueError,
+        sqlite3.Error,
+        csv.Error,
+    ) as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
