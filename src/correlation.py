@@ -13,7 +13,9 @@ from itertools import combinations
 from pathlib import PureWindowsPath
 from typing import List, Optional
 import csv
+import hashlib
 import json
+from urllib.parse import quote
 
 from src.schema import (
     ForensicEvent,
@@ -177,14 +179,24 @@ class CorrelationEngine:
     def __init__(self, window_minutes: float = 5.0):
         self.window_minutes = window_minutes
 
+    @staticmethod
+    def _finding_id(event_a: ForensicEvent, event_b: ForensicEvent) -> str:
+        case_id = event_a.case_id or "UNSPECIFIED"
+        event_ids = sorted((event_a.event_id, event_b.event_id))
+        identity = json.dumps((case_id, event_ids), ensure_ascii=True, separators=(",", ":"))
+        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+        return f"FIND-{quote(case_id, safe='')}-{digest}"
+
     def correlate(self, events: List[ForensicEvent]) -> List[CorrelationFinding]:
         findings: List[CorrelationFinding] = []
-        finding_count = 1
 
         # Sort events chronologically
         sorted_events = sorted(events, key=lambda e: e.dt)
 
         for event_a, event_b in combinations(sorted_events, 2):
+            if event_a.case_id != event_b.case_id:
+                continue
+
             delta_seconds = abs((event_a.dt - event_b.dt).total_seconds())
             delta_minutes = round(delta_seconds / 60.0, 2)
 
@@ -274,7 +286,7 @@ class CorrelationEngine:
                     evidence_refs.append(event_b.evidence_reference)
 
                 findings.append(CorrelationFinding(
-                    finding_id=f"FIND-{finding_count:03d}",
+                    finding_id=self._finding_id(event_a, event_b),
                     event_a_id=event_a.event_id,
                     event_b_id=event_b.event_id,
                     event_a_desc=f"[{event_a.artifact_source}] {event_a.message}",
@@ -288,8 +300,8 @@ class CorrelationEngine:
                     event_ids=[event_a.event_id, event_b.event_id],
                     investigation_note=" | ".join(investigation_notes) if investigation_notes else None,
                     evidence_references=evidence_refs,
+                    case_id=event_a.case_id,
                 ))
-                finding_count += 1
 
         return findings
 
@@ -305,7 +317,7 @@ class CorrelationEngine:
         if not findings:
             return
         fieldnames = [
-            "finding_id", "event_a_id", "event_b_id", "event_ids",
+            "finding_id", "case_id", "event_a_id", "event_b_id", "event_ids",
             "time_delta_minutes", "matched_rules", "confidence_score",
             "confidence_level", "event_a_desc", "event_b_desc",
             "explanation", "investigation_note", "evidence_references",

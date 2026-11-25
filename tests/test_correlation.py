@@ -125,6 +125,53 @@ class TestCorrelation(unittest.TestCase):
         self.assertIn("R05", f_deletion.matched_rules)
         self.assertEqual(f_deletion.confidence_level, "HIGH")
 
+    @staticmethod
+    def _case_pair(case_id, prefix):
+        shared_path = r"C:\Cases\shared\report.docx"
+        return [
+            ForensicEvent(
+                event_id=f"{prefix}-LNK",
+                timestamp="2026-10-25T02:10:00+00:00",
+                timestamp_desc="LNK Target Accessed",
+                artifact_source="LNK",
+                source_file=f"{prefix}.lnk",
+                target_path=shared_path,
+                message="Shortcut target",
+                case_id=case_id,
+            ),
+            ForensicEvent(
+                event_id=f"{prefix}-RB",
+                timestamp="2026-10-25T02:11:00+00:00",
+                timestamp_desc="Deletion Timestamp",
+                artifact_source="RecycleBin",
+                source_file=f"{prefix}.bin",
+                target_path=shared_path,
+                message="Recycle Bin item",
+                case_id=case_id,
+            ),
+        ]
+
+    def test_finding_ids_are_case_scoped_and_stable(self):
+        engine = CorrelationEngine()
+        events_a = self._case_pair("CASE01", "A")
+        events_b = self._case_pair("CASE02", "B")
+        findings_a = engine.correlate(events_a)
+        findings_b = engine.correlate(events_b)
+
+        self.assertEqual(len(findings_a), 1)
+        self.assertEqual(len(findings_b), 1)
+        self.assertNotEqual(findings_a[0].finding_id, findings_b[0].finding_id)
+        self.assertEqual(findings_a[0].case_id, "CASE01")
+        self.assertEqual(findings_b[0].case_id, "CASE02")
+        self.assertEqual(findings_a[0].finding_id, engine.correlate(events_a)[0].finding_id)
+
+    def test_correlation_does_not_create_findings_across_cases(self):
+        event_a = self._case_pair("CASE01", "A")[0]
+        event_b = self._case_pair("CASE02", "B")[0]
+        event_b.target_path = event_a.target_path
+
+        self.assertEqual(CorrelationEngine().correlate([event_a, event_b]), [])
+
 
 if __name__ == "__main__":
     unittest.main()
