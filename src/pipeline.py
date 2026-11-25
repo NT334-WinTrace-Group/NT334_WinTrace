@@ -42,13 +42,14 @@ def run_pipeline(
     case_id: Optional[str] = None,
     findings_file: Optional[str] = None,
     correlation_window: float = 5.0,
+    source_label: Optional[str] = "plaso",
 ):
     print_banner()
-    print(f"[*] Loading and normalizing raw Plaso output from: {input_file}")
+    print(f"[*] Loading and normalizing {source_label or 'event'} CSV from: {input_file}")
 
-    # Step 1: Normalize raw Plaso input
+    # Step 1: Normalize event CSV input
     events, errors = PlasoNormalizer.normalize_file_with_report(
-        input_file, "plaso", case_id=case_id
+        input_file, source_label, case_id=case_id
     )
     if shellbags_file:
         shellbag_events, shellbag_errors = ShellBagsNormalizer.normalize_file_with_report(
@@ -170,6 +171,11 @@ def main():
     parser.add_argument("--database", default=None, help="SQLite database output path")
     parser.add_argument("--error-log", default=None, help="JSON file for rejected records")
     parser.add_argument("--case-id", default=None, help="Case identifier applied to all imported events")
+    parser.add_argument(
+        "--source-label",
+        default="plaso",
+        help="Provenance label for the primary event CSV (default: plaso)",
+    )
     parser.add_argument("--findings", default=None, help="JSON path for correlation findings")
     parser.add_argument("--correlation-window", type=float, default=5.0, help="Correlation time window in minutes")
 
@@ -186,6 +192,7 @@ def main():
         case_id=args.case_id,
         findings_file=args.findings,
         correlation_window=args.correlation_window,
+        source_label=args.source_label,
     )
 
 
