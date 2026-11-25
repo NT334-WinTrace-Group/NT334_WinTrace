@@ -1,0 +1,30 @@
+[
+  {
+    "finding_id": "FIND-CASE01-a5a7c08411391d8f",
+    "event_a_id": "CASE01-SB0133",
+    "event_b_id": "CASE01-JL0022",
+    "event_a_desc": "[ShellBags] Thư mục được tương tác lần đầu qua Shell (suy từ LastWrite + MRU): Desktop\\Computers and Devices\\10.11.11.128\\10.11.11.128\\secured_drive\\Secret Project Data\\pricing decision",
+    "event_b_desc": "[JumpLists] Microsoft Excel 12 dùng \\\\10.11.11.128\\secured_drive\\Secret Project Data\\pricing decision\\(secret_project)_pricing_decision.xlsx",
+    "time_delta_seconds": 158.0,
+    "time_delta_minutes": 2.63,
+    "matched_rules": [
+      "R01",
+      "R02",
+      "R03"
+    ],
+    "confidence_score": 90,
+    "confidence_level": "HIGH",
+    "explanation": "Events occurred within 2.6m (threshold 5.0m) | Target object relationship: Parent-child path | Cross-artifact link (Parent-child path): ShellBags <-> JumpLists | Consistent user attribution: informant",
+    "event_ids": [
+      "CASE01-SB0133",
+      "CASE01-JL0022"
+    ],
+    "investigation_note": "Validation status: CASE01-SB0133=verified, CASE01-JL0022=unverified",
+    "evidence_references": [
+      "Deduplicated.csv:L106 | hive=UsrClass.dat | BagPath=BagMRU\\8\\0\\0\\2 | Slot=1 | MRU=0 | ShellType=Directory | verified: ShellBags Explorer v2026.10.1 (CASE01-F001)",
+      "AutomaticDestinations_fromF.csv:L23 | file=69bacc0499d41c4.automaticDestinations-ms | entry=1 | tool=JLECmd 2026.10.5 | input=F: read-only mount"
+    ],
+    "validation_status": null,
+    "case_id": "CASE01"
+  }
+]
