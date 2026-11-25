@@ -37,6 +37,9 @@ source. Preserve its provenance as a review/reference source only.
   `evidence_reference`, and `validation_status` as direct schema fields.
 - The current source CSV has direct Schema v2 fields and retains detailed
   parser/provenance metadata in `extra_attributes`.
+- Path normalization changes separators in `target_path` only; adapters preserve
+  the exact input literal in `extra_attributes.raw_path`. Do not rewrite the
+  CASE01 source CSV to apply normalization.
 - All current rows carry direct `case_id="CASE01"`. If an older input lacks it,
   the adapter may explicitly infer CASE01 from the `CASE01-` event ID prefix;
   it must not infer a case from a filename or timestamp.
@@ -64,6 +67,9 @@ Expected normalized identity/provenance fields:
   "timestamp_desc": "ShellItem Target Modified Time",
   "timestamp_type": "ShellItem_FolderModified",
   "target_path": "E:\\Secret Project Data\\design\\winter_whether_advisory.zip",
+  "extra_attributes": {
+    "raw_path": "E:\\Secret Project Data\\design\\winter_whether_advisory.zip"
+  },
   "artifact_source": "ShellBags",
   "evidence_reference": "Deduplicated.csv:L59 | hive=UsrClass.dat | BagPath=BagMRU\\1\\0\\1\\4 | Slot=0 | MRU=0 | ShellType=File | verified: ShellBags Explorer v2026.10.1 (CASE01-F004)",
   "validation_status": "unverified"

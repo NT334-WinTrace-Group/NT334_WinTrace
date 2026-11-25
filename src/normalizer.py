@@ -94,10 +94,10 @@ class PlasoNormalizer:
             if match:
                 candidate = match.group(1).strip().rstrip(",")
                 if re.match(r"^[a-zA-Z]:\\", candidate):
-                    return normalize_windows_path(candidate)
+                    return candidate
 
         if re.match(r"^[a-zA-Z]:\\", display_name):
-            return normalize_windows_path(display_name)
+            return display_name
         return ""
 
     @staticmethod
@@ -178,12 +178,7 @@ class PlasoNormalizer:
         artifact_source = artifact_hint or cls.detect_artifact_source(
             parser, source, source_long, message
         )
-        target_path = target_hint or cls.extract_windows_path(message, display_name)
-        username, user_sid = cls.extract_user_info(message, display_name)
-        username = raw_row.get("username") or username
-        user_sid = raw_row.get("user_sid") or user_sid
         extra_attrs = cls.extract_extra_attributes(message, artifact_source)
-        
         raw_extra = raw_row.get("extra_attributes")
         if raw_extra:
             try:
@@ -193,7 +188,20 @@ class PlasoNormalizer:
             if not isinstance(parsed_extra, dict):
                 raise ValueError("extra_attributes must contain a JSON object")
             extra_attrs = {**parsed_extra, **extra_attrs}
-            
+
+        raw_path = (
+            raw_row.get("raw_path")
+            or extra_attrs.get("raw_path")
+            or target_hint
+            or cls.extract_windows_path(message, display_name)
+        )
+        target_path = target_hint or raw_path
+        if raw_path:
+            extra_attrs.setdefault("raw_path", raw_path)
+        username, user_sid = cls.extract_user_info(message, display_name)
+        username = raw_row.get("username") or username
+        user_sid = raw_row.get("user_sid") or user_sid
+
         provenance = _read_provenance(raw_row, extra_attrs)
         for field in PROVENANCE_FIELDS:
             if raw_row.get(field):
@@ -315,6 +323,15 @@ class ShellBagsNormalizer:
         provenance = _read_provenance(row, extra_dict)
         for field in PROVENANCE_FIELDS:
             extra_dict.pop(field, None)
+        raw_path = (
+            row.get("raw_path")
+            or extra_dict.get("raw_path")
+            or row.get("target_path")
+            or row.get("object_path")
+            or ""
+        )
+        if raw_path:
+            extra_dict.setdefault("raw_path", raw_path)
         event_id = row.get("event_id", "")
         provenance["case_id"] = provenance["case_id"] or _legacy_case_id(event_id)
 

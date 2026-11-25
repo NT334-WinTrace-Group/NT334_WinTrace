@@ -79,14 +79,13 @@ VALID_TIMESTAMP_TYPES = {
 
 
 def normalize_windows_path(path_str: Optional[str]) -> str:
-    """Normalize Windows paths for consistent case-insensitive comparison."""
+    """Normalize separators without changing Windows path namespace semantics."""
     if not path_str:
         return ""
-    # Strip quotes and leading/trailing whitespace
-    cleaned = path_str.strip().strip('"\'')
-    # Replace forward slashes with backslashes
+    cleaned = path_str.strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in "\"'":
+        cleaned = cleaned[1:-1]
     cleaned = cleaned.replace('/', '\\')
-    # Remove redundant backslashes
     if cleaned.startswith("\\\\"):
         return "\\\\" + re.sub(r'\\+', r'\\', cleaned.lstrip("\\"))
     cleaned = re.sub(r'\\+', r'\\', cleaned)

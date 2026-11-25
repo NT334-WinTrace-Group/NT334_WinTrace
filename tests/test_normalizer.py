@@ -5,7 +5,10 @@ Compatible with both unittest and pytest.
 
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from src.normalizer import PlasoNormalizer, ShellBagsNormalizer
+from src.schema import ForensicEvent
+from src.timeline_parser import TimelineParser
 
 
 class TestNormalizer(unittest.TestCase):
@@ -53,6 +56,52 @@ class TestNormalizer(unittest.TestCase):
         self.assertEqual(event.timestamp_type, "Prefetch_LastRun")
         self.assertEqual(event.case_id, "CASE01")
         self.assertIn("plaso:prefetch", event.evidence_reference)
+
+    def test_normalize_record_preserves_raw_path(self):
+        raw_path = "E:/Evidence//Nguyễn/資料/file.raw"
+        event = PlasoNormalizer.normalize_record({
+            "datetime": "2026-10-25T02:14:00+00:00",
+            "target_path": raw_path,
+            "raw_path": raw_path,
+            "parser": "file",
+            "artifact_source": "Generic",
+        }, 1)
+
+        self.assertEqual(event.target_path, "E:\\Evidence\\Nguyễn\\資料\\file.raw")
+        self.assertEqual(event.extra_attributes["raw_path"], raw_path)
+
+    def test_shellbags_normalizer_preserves_raw_path(self):
+        raw_path = r"\\server\\share\Folder"
+        event = ShellBagsNormalizer._normalize_row({
+            "event_id": "CASE01-SB-RAW",
+            "timestamp": "2026-10-25T02:14:00+00:00",
+            "target_path": raw_path,
+            "artifact_source": "ShellBags",
+        })
+
+        self.assertEqual(event.target_path, r"\\server\share\Folder")
+        self.assertEqual(event.extra_attributes["raw_path"], raw_path)
+
+    def test_csv_export_and_import_preserve_raw_path(self):
+        raw_path = "E:/Evidence//folder/file.raw"
+        event = ForensicEvent(
+            event_id="EVT-RAW-PATH",
+            timestamp="2026-10-25T02:14:00+00:00",
+            timestamp_desc="Created",
+            artifact_source="Generic",
+            source_file="evidence.raw",
+            target_path=raw_path,
+            message="Raw path round-trip",
+            extra_attributes={"raw_path": raw_path},
+        )
+
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "raw_path_roundtrip.csv"
+            TimelineParser.export_to_csv([event], str(output))
+            restored = TimelineParser.load_from_csv(str(output))[0]
+
+        self.assertEqual(restored.target_path, "E:\\Evidence\\folder\\file.raw")
+        self.assertEqual(restored.extra_attributes["raw_path"], raw_path)
 
     def test_shellbags_normalizer(self):
         csv_path = Path("results/case01_shellbags_events.csv")

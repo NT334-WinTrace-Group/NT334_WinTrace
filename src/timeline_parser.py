@@ -105,6 +105,9 @@ class TimelineParser:
                         extra_attributes = json.loads(extra_raw)
                     except (json.JSONDecodeError, TypeError):
                         pass
+                raw_path = row.get("raw_path") or extra_attributes.get("raw_path") or target_path
+                if raw_path:
+                    extra_attributes.setdefault("raw_path", raw_path)
 
                 events.append(ForensicEvent(
                     event_id=event_id,
@@ -146,7 +149,7 @@ class TimelineParser:
             "artifact_source", "source_file", "target_path",
             "evidence_reference", "message", "data_type", "parser",
             "user_sid", "username", "confidence_level",
-            "validation_status", "case_id",
+            "validation_status", "case_id", "extra_attributes",
         ]
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w", encoding="utf-8", newline="") as f:
@@ -154,6 +157,9 @@ class TimelineParser:
             writer.writeheader()
             for e in events:
                 row = {k: getattr(e, k) for k in fieldnames}
+                row["extra_attributes"] = json.dumps(
+                    e.extra_attributes, ensure_ascii=False, sort_keys=True
+                )
                 writer.writerow(row)
 
 
