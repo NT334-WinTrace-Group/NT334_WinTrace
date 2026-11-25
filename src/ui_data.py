@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from src.schema import ForensicEvent, normalize_windows_path
 from src.storage import NOT_RECORDED, TimelineStore
+from src.ui_evidence import evidence_basis
 
 TIMELINE_COLUMNS = [
     "Event ID",
@@ -18,6 +19,7 @@ TIMELINE_COLUMNS = [
     "Timestamp type",
     "Artifact",
     "Validation",
+    "Evidence basis",
     "Path",
     "Description",
     "Source file",
@@ -164,6 +166,7 @@ def timeline_row(event: ForensicEvent) -> Dict[str, str]:
         "Timestamp type": event.timestamp_type or "Not recorded",
         "Artifact": event.artifact_source,
         "Validation": event.validation_status or "Not recorded",
+        "Evidence basis": evidence_basis(event).label,
         "Path": event.target_path or "Not recorded",
         "Description": event.message,
         "Source file": event.source_file or "Not recorded",

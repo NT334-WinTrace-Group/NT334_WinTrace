@@ -16,13 +16,22 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src import ui_data
+from src import ui_data, ui_evidence
 from src.report_generator import ReportGenerator
 
 DEFAULT_DATABASE = "results/CASE01/timeline.db"
 DEFAULT_FINDINGS = "results/CASE01/findings.json"
 ALL = ""  # selectbox value meaning "no filter"; None would show as unselected
+# Streamlit's faded captions, badges and alerts fall short of 4.5:1 contrast.
+STYLE = """<style>
+.block-container {padding-top: 2.5rem;}
+[data-testid="stCaptionContainer"] {opacity: 1;}
+[data-testid="stCaptionContainer"] p {color: #475569; opacity: 1;}
+.stMarkdownBadge, [data-testid="stAlert"] p {color: #0F172A !important;}
+</style>"""
 PAGE_SIZES = [25, 50, 100, 250]
+STATUS_COLORS = {"verified": "green", "disputed": "red", "synthetic": "violet"}
+TONE_COLORS = {"evidence": "blue", "inferred": "orange", "limited": "gray"}
 FILTER_DEFAULTS = {
     "filter_start": "",
     "filter_end": "",
@@ -146,24 +155,61 @@ def sidebar_filters(summary):
         return None
 
 
+def field(label, value):
+    """Show stored text literally; evidence must not be parsed as Markdown."""
+    st.caption(label)
+    st.text(value or ui_evidence.NOT_RECORDED_TEXT)
+
+
+def code_field(label, value):
+    st.caption(label)
+    st.code(value or ui_evidence.NOT_RECORDED_TEXT, language=None, wrap_lines=True)
+
+
 def render_event_detail(event):
     st.subheader("Evidence detail")
-    left, right = st.columns(2)
+    basis = ui_evidence.evidence_basis(event)
+    status = event.validation_status or ui_evidence.NOT_RECORDED_TEXT
+    status_column, basis_column = st.columns([1, 2])
+    with status_column:
+        st.caption("Validation status")
+        st.badge(status, color=STATUS_COLORS.get(status, "gray"))
+    with basis_column:
+        st.caption("Evidence basis")
+        st.badge(basis.label, color=TONE_COLORS[basis.tone])
+        st.markdown(basis.explanation)
+    for message in ui_evidence.warnings(event):
+        st.warning(message)
+
+    left, middle, right = st.columns(3)
     with left:
-        st.markdown(f"**Timestamp:** `{ui_data.format_utc(event)}` ({event.timestamp_type or 'Not recorded'})")
-        st.markdown(f"**Artifact:** `{event.artifact_source}`")
-        st.markdown(f"**Source file:** `{event.source_file}`")
-        st.markdown(f"**Case ID:** `{event.case_id or 'Unspecified'}`")
+        field("Event ID", event.event_id)
+        field("Case ID", event.case_id or "Unspecified")
+        field("Artifact", event.artifact_source)
+    with middle:
+        field("Timestamp", ui_data.format_utc(event))
+        field("Timestamp type", event.timestamp_type)
+        field("Timestamp meaning", event.timestamp_desc)
     with right:
-        st.markdown("**Description**")
-        st.text(event.message)
-        st.markdown(f"**Validation status:** `{event.validation_status or 'Not recorded'}`")
-    st.markdown("**Path**")
-    st.code(event.target_path or "Not recorded", language=None, wrap_lines=True)
-    st.markdown("**Evidence reference**")
-    st.code(event.evidence_reference or "Not recorded", language=None, wrap_lines=True)
-    with st.expander("Extra attributes"):
-        st.json(event.extra_attributes)
+        field("Source file", event.source_file)
+        field("Source record", ", ".join(ui_evidence.source_records(event)))
+        field("Parser", event.parser)
+
+    source_column, normalized_column = st.columns(2)
+    with source_column:
+        code_field("Path recorded by the artifact", ui_evidence.source_path(event))
+    with normalized_column:
+        code_field("Normalized filesystem path", ui_evidence.normalized_path_text(event))
+    code_field("Evidence reference", event.evidence_reference)
+    code_field("Description", event.message)
+
+    notes = ui_evidence.limitations(event)
+    if notes:
+        st.caption("Interpretation limits")
+        for note in notes:
+            st.text(note)
+    with st.expander("All stored attributes"):
+        st.json(event.to_dict())
 
 
 def render_timeline(database, filters, summary):
@@ -292,7 +338,7 @@ def render_reporting(database, filters, findings):
 
 
 def main():
-    st.html("<style>.block-container {padding-top: 2.5rem;}</style>")
+    st.html(STYLE)
     st.title("WinTrace")
     st.caption("Windows super timeline analysis. All times are UTC.")
     database, findings_path = sidebar_sources()

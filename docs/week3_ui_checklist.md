@@ -1,6 +1,6 @@
 # Tuần 3 – Ngày 15: Kiểm kê UI
 
-Kiểm kê ban đầu theo `src/app.py` tại `dev` `8053b34`; Ngày 16 đã cập nhật. `[x]` đã có, `[ ]` còn thiếu.
+Kiểm kê ban đầu theo `src/app.py` tại `dev` `8053b34`; đã cập nhật đến Ngày 17. `[x]` đã có, `[ ]` còn thiếu.
 
 ## Ngày 16 – Timeline và filters
 - [x] Bảng event; lọc ngày UTC, path, keyword, một artifact (AND)
@@ -13,10 +13,10 @@ Kiểm kê ban đầu theo `src/app.py` tại `dev` `8053b34`; Ngày 16 đã c�
 
 ## Ngày 17 – Evidence detail
 - [x] timestamp và type, source, case, message, path, status, reference, extra JSON
-- [ ] P0: `event_id`, `timestamp_desc`, `source_line` hiện rõ trong chi tiết
-- [ ] P0: namespace gốc cạnh path chuẩn hóa; path dài không vỡ
-- [ ] P0: nhãn bằng chứng (contract mục 3) và `caveat`
-- [ ] P1: cảnh báo khi thiếu `evidence_reference`
+- [x] P0: `event_id`, `timestamp_desc`, `source_line` hiện rõ trong chi tiết
+- [x] P0: namespace gốc cạnh path chuẩn hóa; path dài không vỡ
+- [x] P0: nhãn bằng chứng (contract mục 3) và `caveat`
+- [x] P1: cảnh báo khi thiếu `evidence_reference`
 
 ## Ngày 18 – Findings
 - [x] finding_id, confidence, rules, time delta, explanation, references
