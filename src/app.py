@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src import ui_data, ui_evidence, ui_findings
+from src import ui_data, ui_evidence, ui_export, ui_findings
 from src.report_generator import ReportGenerator
 
 DEFAULT_DATABASE = "results/CASE01/timeline.db"
@@ -29,8 +29,11 @@ STYLE = """<style>
 [data-testid="stCaptionContainer"] {opacity: 1;}
 [data-testid="stCaptionContainer"] p {color: #475569; opacity: 1;}
 .stMarkdownBadge, [data-testid="stAlert"] p {color: #0F172A !important;}
+/* The grid's own CSV button would bypass the validated export. */
+[data-testid="stElementToolbar"] {display: none;}
 </style>"""
 FINDINGS_PER_PAGE = 50
+MAX_LISTED_ERRORS = 100
 PAGE_SIZES = [25, 50, 100, 250]
 STATUS_COLORS = {"verified": "green", "disputed": "red", "synthetic": "violet"}
 TONE_COLORS = {"evidence": "blue", "inferred": "orange", "limited": "gray"}
@@ -367,11 +370,12 @@ def finding_filters(findings):
 
 
 def render_findings(findings, index, note):
+    """Render the tab and return (selected findings, their filter description)."""
     if note:
         st.warning(note)
     if not findings:
         st.info("No correlation findings to show for this case.")
-        return
+        return [], {}
     counts = Counter(ui_findings.review_status(f) for f in findings)
     st.markdown(
         f"**{len(findings):,}** findings: "
@@ -383,10 +387,11 @@ def render_findings(findings, index, note):
     )
     criteria, sort = finding_filters(findings)
     selected = ui_findings.select_findings(findings, index, criteria, sort)
+    description = {**vars(criteria), "sort": sort}
     if not selected:
         st.info("No findings match these filters.")
         st.button("Reset finding filters", on_click=reset_finding_filters)
-        return
+        return [], description
 
     page_count = (len(selected) + FINDINGS_PER_PAGE - 1) // FINDINGS_PER_PAGE
     page = min(max(st.session_state.get("finding_page", 1), 1), page_count)
@@ -408,6 +413,7 @@ def render_findings(findings, index, note):
         format_func=lambda i: f"{rows[i]['Finding ID']} | {rows[i]['Event IDs']}",
     )
     render_finding_detail(visible[position], rows[position], index)
+    return selected, description
 
 
 def render_finding_detail(finding, row, index):
@@ -458,32 +464,135 @@ def render_finding_detail(finding, row, index):
     render_event_detail(events[position])
 
 
-def render_reporting(database, filters, findings):
-    if filters is None:
-        st.warning("Correct the filter shown in the sidebar before exporting.")
-        return
-    if not st.button("Prepare export for all matching events"):
-        return
-    try:
-        events = ui_data.load_matching(database, filters)
-    except (sqlite3.Error, ValueError, OSError) as exc:
-        st.error(f"Cannot prepare the export: {exc}")
+def check_records(records, errors, names, label, skip_invalid):
+    """Report invalid records; return (exportable records, excluded list) or None."""
+    if not errors:
+        return records, []
+    st.error(f"{len(errors):,} of {len(records):,} {label} are not exportable.")
+    listing = [
+        {"Record": names[position] or "Not recorded", "Problem": " ".join(messages)}
+        for position, messages in sorted(errors.items())
+    ]
+    st.dataframe(pd.DataFrame(listing[:MAX_LISTED_ERRORS]), width="stretch", hide_index=True)
+    if len(listing) > MAX_LISTED_ERRORS:
+        st.caption(f"Showing the first {MAX_LISTED_ERRORS} problems.")
+    if not skip_invalid:
+        st.markdown(
+            "Correct the source data, or select **Leave out invalid records** and prepare again."
+        )
+        return None
+    kept = [record for position, record in enumerate(records) if position not in errors]
+    excluded = [{"record": item["Record"], "problem": item["Problem"]} for item in listing]
+    return kept, excluded
+
+
+def download(label, data, name, mime):
+    st.download_button(label, data, file_name=name, mime=mime, on_click="ignore", key=name)
+
+
+def csv_bytes(text):
+    return text.encode("utf-8-sig")  # the marker lets Excel read Vietnamese text
+
+
+def render_event_export(database, filters, findings, skip_invalid, stamp):
+    st.subheader("Filtered timeline")
+    signature = file_signature(database)
+    events = ui_data.load_matching(database, filters)
+    source = ui_export.source_info(database)
+    if file_signature(database) != signature:
+        st.error("The database changed while the export was prepared. Prepare it again.")
         return
     if not events:
         st.info("No matching events to export.")
         return
+    checked = check_records(
+        events, ui_export.event_errors(events), [event.event_id for event in events],
+        "events", skip_invalid,
+    )
+    if checked is None:
+        return
+    events, excluded = checked
+    if not events:
+        st.info("No valid events remain to export.")
+        return
     st.markdown(f"Export contains **{len(events):,}** matching events.")
+    case_id = filters["case_id"]
+    case = ui_export.safe_name(None if case_id == ui_data.NOT_RECORDED else case_id)
+    base = f"wintrace_{case}_timeline_{stamp}"
+    download(
+        "Download timeline (CSV)", csv_bytes(ui_export.events_to_csv(events)),
+        f"{base}.csv", "text/csv",
+    )
+    download(
+        "Download timeline (JSON)",
+        ui_export.events_to_json(events, filters, [source], excluded),
+        f"{base}.json", "application/json",
+    )
+    download(
+        "Download HTML report", ReportGenerator.generate_html_report(events, findings),
+        f"{base}.html", "text/html",
+    )
+
+
+def render_finding_export(database, findings_path, findings, index, description, skip_invalid, stamp):
+    """Render the findings export and return the findings that passed validation."""
+    st.subheader("Selected findings")
+    if not findings:
+        st.info("No findings to export. Check the Correlation findings tab and its filters.")
+        return []
+    checked = check_records(
+        findings, ui_export.finding_errors(findings, index),
+        [str(f.get("finding_id") or "") for f in findings], "findings", skip_invalid,
+    )
+    if checked is None:
+        return []
+    findings, excluded = checked
+    if not findings:
+        st.info("No valid findings remain to export.")
+        return []
+    st.markdown(f"Export contains **{len(findings):,}** findings.")
+    sources = [ui_export.source_info(database), ui_export.source_info(findings_path)]
+    cases = {f.get("case_id") for f in findings}
+    case = ui_export.safe_name(cases.pop() if len(cases) == 1 else None)
+    base = f"wintrace_{case}_findings_{stamp}"
+    download(
+        "Download findings (CSV)", csv_bytes(ui_export.findings_to_csv(findings)),
+        f"{base}.csv", "text/csv",
+    )
+    download(
+        "Download findings with source events (JSON)",
+        ui_export.findings_to_json(findings, index, description, sources, excluded),
+        f"{base}.json", "application/json",
+    )
+    return findings
+
+
+def render_reporting(database, filters, findings_path, findings, index, description):
+    if filters is None:
+        st.warning("Correct the filter shown in the sidebar before exporting.")
+        return
+    st.markdown(
+        "Exports follow the timeline filters in the sidebar and the filters "
+        "in the Correlation findings tab. Every page is included."
+    )
+    st.caption(
+        "User SIDs, host and volume identifiers and loaded-file lists are left out. "
+        "Paths, descriptions and references are kept for traceability and may name people or devices."
+    )
+    skip_invalid = st.checkbox(
+        "Leave out invalid records", key="skip_invalid",
+        help="JSON exports list every record that was left out and why.",
+    )
+    if not st.button("Prepare export", type="primary"):
+        return
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%SZ")
-    st.download_button(
-        "Download HTML report",
-        ReportGenerator.generate_html_report(events, findings),
-        file_name=f"wintrace_report_{stamp}.html", mime="text/html", on_click="ignore",
-    )
-    st.download_button(
-        "Download filtered timeline (CSV)",
-        pd.DataFrame([event.to_dict() for event in events]).to_csv(index=False).encode("utf-8"),
-        file_name=f"filtered_timeline_{stamp}.csv", mime="text/csv", on_click="ignore",
-    )
+    try:
+        valid_findings = render_finding_export(
+            database, findings_path, findings, index, description, skip_invalid, stamp
+        )
+        render_event_export(database, filters, valid_findings, skip_invalid, stamp)
+    except (sqlite3.Error, ValueError, OSError) as exc:
+        st.error(f"Cannot prepare the export: {exc}")
 
 
 def main():
@@ -506,9 +615,9 @@ def main():
     with timeline_tab:
         render_timeline(database, filters, summary)
     with findings_tab:
-        render_findings(findings, index, findings_note)
+        selected, description = render_findings(findings, index, findings_note)
     with report_tab:
-        render_reporting(database, filters, findings)
+        render_reporting(database, filters, findings_path, selected, index, description)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # Tuần 3 – Ngày 15: Kiểm kê UI
 
-Kiểm kê ban đầu theo `src/app.py` tại `dev` `8053b34`; đã cập nhật đến Ngày 18. `[x]` đã có, `[ ]` còn thiếu.
+Kiểm kê ban đầu theo `src/app.py` tại `dev` `8053b34`; đã cập nhật đến Ngày 19. `[x]` đã có, `[ ]` còn thiếu.
 
 ## Ngày 16 – Timeline và filters
 - [x] Bảng event; lọc ngày UTC, path, keyword, một artifact (AND)
@@ -31,10 +31,10 @@ Kiểm kê ban đầu theo `src/app.py` tại `dev` `8053b34`; đã cập nhật
 
 ## Ngày 19 – Export
 - [x] CSV timeline (chỉ các dòng đã tải), HTML report
-- [ ] P0: CSV/JSON cho toàn bộ kết quả filter; CSV/JSON cho findings
-- [ ] P0: kiểm tra required fields và `event_ids`; báo lỗi khi thiếu evidence
-- [ ] P0: test roundtrip
-- [ ] P1: rà thông tin nhạy cảm trong `extra_attributes`; chặn CSV formula injection
+- [x] P0: CSV/JSON cho toàn bộ kết quả filter; CSV/JSON cho findings
+- [x] P0: kiểm tra required fields và `event_ids`; báo lỗi khi thiếu evidence
+- [x] P0: test roundtrip
+- [x] P1: rà thông tin nhạy cảm trong `extra_attributes`; chặn CSV formula injection
 
 ## Ngày 20–21 – Smoke và freeze
 - [x] P0: cache theo path, không làm mới khi DB/JSON thay đổi (Ngày 18: khóa cache theo mtime và kích thước)

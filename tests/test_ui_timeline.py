@@ -226,6 +226,6 @@ def test_switching_database_drops_filters_of_the_old_one(tmp_path, case01_db):
 
 def test_prepared_export_covers_all_pages(case01_db):
     app = run_app(case01_db)
-    next(b for b in app.button if b.label.startswith("Prepare export")).click().run()
+    next(b for b in app.button if b.label == "Prepare export").click().run()
     assert not app.exception
     assert "Export contains **692** matching events" in rendered_text(app)
