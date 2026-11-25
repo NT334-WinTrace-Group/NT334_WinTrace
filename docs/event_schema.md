@@ -108,7 +108,8 @@ Kết quả tương quan từ **Correlation Engine** được chuẩn hóa theo 
 
 | Trường | Kiểu dữ liệu | Mới ở v2 | Mô tả |
 |---|:---:|:---:|---|
-| `finding_id` | `String` | | Mã phát hiện: `"FIND-001"` |
+| `finding_id` | `String` | | ID ổn định, namespaced theo case ID và cặp event; không trùng giữa các case |
+| `case_id` | `String` | **MỚI** | Case chứa các event trong finding |
 | `event_a_id` | `String` | | ID sự kiện thứ nhất (tương thích ngược) |
 | `event_b_id` | `String` | | ID sự kiện thứ hai (tương thích ngược) |
 | `event_ids` | `List[String]` | **MỚI** | Danh sách đầy đủ các Event ID tham gia chuỗi tương quan |

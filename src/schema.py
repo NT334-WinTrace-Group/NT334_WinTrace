@@ -251,6 +251,7 @@ class CorrelationFinding:
     investigation_note: Optional[str] = None
     evidence_references: List[str] = field(default_factory=list)
     validation_status: Optional[str] = None
+    case_id: Optional[str] = None
 
     def __post_init__(self):
         # Auto-populate event_ids from event_a_id and event_b_id if empty

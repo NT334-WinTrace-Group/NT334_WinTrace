@@ -19,7 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.normalizer import PlasoNormalizer, ShellBagsNormalizer
-from src.correlation import CorrelationEngine
+from src.correlation import CorrelationEngine, normalize_case_id
 from src.schema import VALID_ARTIFACTS
 from src.storage import TimelineStore
 from src.timeline_parser import TimelineParser, TargetedFilter
@@ -135,6 +135,22 @@ def run_pipeline(
         events = TargetedFilter.filter_by_artifacts(events, artifacts=[filter_artifact])
         print(f"[+] Events after artifact filter: {len(events)}")
 
+    for event in events:
+        event.case_id = normalize_case_id(event.case_id)
+
+    findings = None
+    if findings_file:
+        engine = CorrelationEngine(window_minutes=correlation_window)
+        case_groups = {}
+        for event in events:
+            case_groups.setdefault(event.case_id, []).append(event)
+        findings = []
+        for case_id in sorted(
+            case_groups,
+            key=lambda value: (value is not None, value or ""),
+        ):
+            findings.extend(engine.correlate(case_groups[case_id]))
+
     # Step 3: Export normalized events
     out_path = Path(output_file)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -155,14 +171,6 @@ def run_pipeline(
             )
 
     if findings_file:
-        engine = CorrelationEngine(window_minutes=correlation_window)
-        findings = []
-        case_groups = {}
-        for event in events:
-            case_groups.setdefault(event.case_id or "Unspecified", []).append(event)
-        for _, case_events in sorted(case_groups.items()):
-            findings.extend(engine.correlate(case_events))
-
         findings_path = Path(findings_file)
         findings_path.parent.mkdir(parents=True, exist_ok=True)
         CorrelationEngine.export_findings_json(findings, str(findings_path))

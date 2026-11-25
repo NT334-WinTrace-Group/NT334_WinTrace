@@ -52,6 +52,61 @@ def test_pipeline_keeps_supporting_tool_source_label():
     assert event["extra_attributes"]["source_label"] == "case01-supporting-tools"
 
 
+def test_pipeline_normalizes_missing_case_ids_without_merging_named_case():
+    rows = [
+        {
+            "event_id": "EVT-001",
+            "timestamp": "2026-10-25T02:10:00+00:00",
+            "timestamp_desc": "LNK Target Accessed",
+            "artifact_source": "LNK",
+            "source_file": "report.docx.lnk",
+            "target_path": r"C:\Cases\shared\report.docx",
+            "message": "Shortcut target",
+            "case_id": "",
+        },
+        {
+            "event_id": "EVT-002",
+            "timestamp": "2026-10-25T02:11:00+00:00",
+            "timestamp_desc": "File Deletion Time",
+            "artifact_source": "RecycleBin",
+            "source_file": "$I-report.docx",
+            "target_path": r"C:\Cases\shared\report.docx",
+            "message": "Recycle Bin item",
+            "case_id": "  ",
+        },
+        {
+            "event_id": "EVT-003",
+            "timestamp": "2026-10-25T02:12:00+00:00",
+            "timestamp_desc": "LNK Target Accessed",
+            "artifact_source": "LNK",
+            "source_file": "other-case.lnk",
+            "target_path": r"C:\Cases\shared\report.docx",
+            "message": "Named case shortcut",
+            "case_id": "Unspecified",
+        },
+    ]
+
+    with TemporaryDirectory() as temp_dir:
+        input_path = Path(temp_dir) / "events.csv"
+        output_path = Path(temp_dir) / "events.json"
+        findings_path = Path(temp_dir) / "findings.json"
+        _write_rows(input_path, rows)
+
+        run_pipeline(
+            input_file=str(input_path),
+            output_file=str(output_path),
+            findings_file=str(findings_path),
+        )
+
+        events = json.loads(output_path.read_text(encoding="utf-8"))
+        findings = json.loads(findings_path.read_text(encoding="utf-8"))
+
+    assert [event["case_id"] for event in events] == [None, None, "Unspecified"]
+    assert len(findings) == 1
+    assert findings[0]["event_ids"] == ["EVT-001", "EVT-002"]
+    assert findings[0]["case_id"] is None
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
@@ -86,6 +141,27 @@ def test_pipeline_fails_before_outputs_when_any_record_is_invalid(
     assert not findings_path.exists()
 
 
+def test_pipeline_rejects_duplicate_event_ids_before_any_output(tmp_path):
+    row = _supporting_row()
+    input_path = tmp_path / "duplicate-events.csv"
+    output_path = tmp_path / "normalized.json"
+    database_path = tmp_path / "timeline.db"
+    findings_path = tmp_path / "findings.json"
+    _write_rows(input_path, [row, row])
+
+    with pytest.raises(ValueError, match="Duplicate event_id"):
+        run_pipeline(
+            input_file=str(input_path),
+            output_file=str(output_path),
+            database_file=str(database_path),
+            findings_file=str(findings_path),
+        )
+
+    assert not output_path.exists()
+    assert not database_path.exists()
+    assert not findings_path.exists()
+
+
 def test_pipeline_cli_returns_nonzero_for_missing_source(tmp_path, monkeypatch, capsys):
     missing_input = tmp_path / "missing.csv"
     monkeypatch.setattr(
@@ -102,6 +178,7 @@ def test_pipeline_places_all_outputs_under_case_directory_and_is_idempotent(tmp_
     input_path = tmp_path / "supporting.csv"
     _write_rows(input_path, [_supporting_row()])
     output_root = tmp_path / "output"
+
     def run_import():
         return run_pipeline(
             input_file=str(input_path),
