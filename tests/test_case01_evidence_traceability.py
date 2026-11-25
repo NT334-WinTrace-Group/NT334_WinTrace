@@ -58,6 +58,29 @@ def test_supporting_events_have_origin_type_and_case():
         assert r["validation_status"] == "unverified"
 
 
+def test_supporting_event_actor_attribution_matches_artifact_scope():
+    rows = _rows(SUPPORTING)
+    for r in rows:
+        x = json.loads(r["extra_attributes"])
+        assert x["case_profile"] == "informant"
+        if r["artifact_source"] == "Prefetch":
+            assert not r["username"] and not r["user_sid"]
+            assert x["actor_basis"] == "machine_level_unattributed"
+        elif r["artifact_source"] in {"LNK", "JumpLists"}:
+            assert r["username"] == "informant"
+            assert r["user_sid"].endswith("-1000")
+            assert x["actor_basis"] == "artifact_in_user_profile"
+        elif r["artifact_source"] == "Registry":
+            if r["source_file"].upper() == "NTUSER.DAT":
+                assert r["username"] == "informant"
+                assert r["user_sid"].endswith("-1000")
+                assert x["actor_basis"] == "user_hive"
+            else:
+                assert r["source_file"].upper() in {"SYSTEM", "SOFTWARE"}
+                assert not r["username"] and not r["user_sid"]
+                assert x["actor_basis"] == "machine_level_unattributed"
+
+
 def test_no_analysis_time_contamination():
     """SourceAccessed (= lúc tool đọc file, 2026-10-28) không được thành event."""
     for path in (SHELLBAGS, SUPPORTING):

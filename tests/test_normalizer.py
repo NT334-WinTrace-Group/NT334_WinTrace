@@ -65,7 +65,7 @@ class TestNormalizer(unittest.TestCase):
             self.assertEqual(ev0.artifact_source, "ShellBags")
             self.assertEqual(ev0.case_id, "CASE01")
             self.assertEqual(ev0.timestamp_type, "ShellItem_FolderModified")
-            self.assertEqual(ev0.validation_status, "verified")
+            self.assertEqual(ev0.validation_status, "unverified")
             self.assertIn("Deduplicated.csv", ev0.evidence_reference)
 
 

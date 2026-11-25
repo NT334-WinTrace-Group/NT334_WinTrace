@@ -26,7 +26,7 @@ TOOL = HERE / "tool_output"
 CASE = "CASE01"
 USER, SID = "informant", "S-1-5-21-2425377081-3129163575-2985601102-1000"
 VERSIONS = {"LECmd": "2026.10.3", "JLECmd": "2026.10.5", "PECmd": "2026.10.3",
-            "python-registry": "1.4 (scripts/registry_usb_check.py)"}
+            "python-registry": "1.3.1"}
 # \DEVICE\HARDDISKVOLUME2 = C: (Volume0Serial CA0C7A48 = C:, xem volume_map_case01.csv)
 DEVICE_TO_DRIVE = {"\\DEVICE\\HARDDISKVOLUME2": "C:"}
 USER_FILE = re.compile(r"\\USERS\\INFORMANT\\(?!APPDATA\\)|SECRET|RESIGNATION|WINTER_WHETHER", re.I)
@@ -46,7 +46,7 @@ def iso(v):
 
 
 def read(path):
-    csv.field_size_limit(sys.maxsize)
+    csv.field_size_limit(2**31 - 1)
     with open(path, newline="", encoding="utf-8-sig") as f:
         return list(csv.DictReader(f))
 
@@ -64,17 +64,19 @@ def main():
     args = ap.parse_args()
     out, excluded = [], {"SourceAccessed (thời điểm tool đọc file trên ổ mount)": 0}
 
-    def add(prefix, ts, ts_type, desc, source, src_file, target, ref, msg, dtype, parser, conf, sem, extra):
+    def add(prefix, ts, ts_type, desc, source, src_file, target, ref, msg, dtype, parser, conf, sem, extra,
+            user_sid="", username="", actor_basis="machine_level_unattributed"):
         if ts is None:
             return
         out.append({
             "_prefix": prefix, "timestamp": ts, "timestamp_desc": desc, "timestamp_type": ts_type,
             "artifact_source": source, "source_file": src_file, "target_path": target,
             "evidence_reference": ref, "message": msg, "data_type": dtype, "parser": parser,
-            "user_sid": SID, "username": USER, "confidence_level": conf,
+            "user_sid": user_sid, "username": username, "confidence_level": conf,
             "validation_status": "unverified", "case_id": CASE,
             "extra_attributes": {"semantic_class": sem, "is_user_activity": sem == "user_interaction",
-                                 "origin": "raw_tool_output", **extra},
+                                 "origin": "raw_tool_output", "case_profile": USER,
+                                 "actor_basis": actor_basis, **extra},
         })
 
     # ---------------- LNK ----------------
@@ -93,14 +95,17 @@ def main():
         add("LNK", iso(r["SourceCreated"]), "LNK_FileCreated", "LNK File Created (≈ lần mở đầu qua Shell)",
             "LNK", lnk, target, ref, f"Shortcut tạo khi mở {target}", "windows:lnk:link", "lecmd",
             "MEDIUM", "user_interaction",
-            {**ex, "caveat": "Timestamp file system của .lnk; LNK dùng chung theo tên file, path là của lần mở cuối"})
+            {**ex, "caveat": "Timestamp file system của .lnk; LNK dùng chung theo tên file, path là của lần mở cuối"},
+            user_sid=SID, username=USER, actor_basis="artifact_in_user_profile")
         add("LNK", iso(r["SourceModified"]), "LNK_FileModified", "LNK File Modified (≈ lần mở gần nhất)",
             "LNK", lnk, target, ref, f"Shortcut cập nhật khi mở {target}", "windows:lnk:link", "lecmd",
-            "MEDIUM", "user_interaction", ex)
+            "MEDIUM", "user_interaction", ex, user_sid=SID, username=USER,
+            actor_basis="artifact_in_user_profile")
         for col, tt in (("TargetCreated", "LNK_TargetCreated"), ("TargetModified", "LNK_TargetModified"),
                         ("TargetAccessed", "LNK_TargetAccessed")):
             add("LNK", iso(r[col]), tt, f"{col} của file đích (lưu trong LNK)", "LNK", lnk, target, ref,
-                f"{col} của {target} tại lần mở", "windows:lnk:link", "lecmd", "LOW", "target_metadata", ex)
+                f"{col} của {target} tại lần mở", "windows:lnk:link", "lecmd", "LOW", "target_metadata", ex,
+                user_sid=SID, username=USER, actor_basis="artifact_in_user_profile")
 
     # ---------------- Jump Lists ----------------
     f = "jlecmd/AutomaticDestinations_fromF.csv"
@@ -116,7 +121,8 @@ def main():
              "pinned": r["PinStatus"], "volume_serial": r["VolumeSerialNumber"], "volume_label": r["VolumeLabel"],
              "hostname": r["Hostname"],
              "caveat": ("Jump List của Explorer và ShellBags cùng do Explorer ghi -> không độc lập"
-                        if r["AppId"] == "1b4dd67f29cb1962" else "")})
+                        if r["AppId"] == "1b4dd67f29cb1962" else "")},
+            user_sid=SID, username=USER, actor_basis="artifact_in_user_profile")
 
     # ---------------- Prefetch ----------------
     f = "pecmd/PECmd_Output_fromF.csv"
@@ -128,6 +134,7 @@ def main():
         ex = {"source_line": f"{f.split('/')[-1]}:L{i}", "prefetch_file": pf, "executable": r["ExecutableName"],
               "prefetch_hash": r["Hash"], "run_count": int(r["RunCount"] or 0), "volume_serial": r["Volume0Serial"],
               "raw_full_path": r["FullPath"], "files_loaded_user": user_files,
+              "referenced_files": user_files,
               "files_loaded_total": len([x for x in r["FilesLoaded"].split(", ") if x])}
         add("PF", iso(r["LastRun"]), "Prefetch_LastRun", "Last Time Executed", "Prefetch", pf, exe_path, ref,
             f"Thực thi {r['ExecutableName']} [run count {r['RunCount']}]", "windows:prefetch:execution",
@@ -152,8 +159,11 @@ def main():
         add("REG", iso(r["timestamp_utc"].rstrip("Z")), "Generic", f"Registry: {meaning}", "Registry",
             r["source_hive"], r["item"], ref, f"{r['key_path'].split(chr(92))[-1]} ({meaning}) {r['detail']}".strip(),
             "windows:registry:key", "python-registry", "MEDIUM", sem,
-            {"source_line": f"{f.split('/')[-1]}:L{i}", "key_path": r["key_path"], "registry_timestamp_meaning": meaning,
-             "detail": r["detail"]})
+             {"source_line": f"{f.split('/')[-1]}:L{i}", "key_path": r["key_path"], "registry_timestamp_meaning": meaning,
+             "detail": r["detail"]},
+            user_sid=SID if r["source_hive"].upper() == "NTUSER.DAT" else "",
+            username=USER if r["source_hive"].upper() == "NTUSER.DAT" else "",
+            actor_basis="user_hive" if r["source_hive"].upper() == "NTUSER.DAT" else "machine_level_unattributed")
 
     counters = {}
     for e in out:
@@ -166,8 +176,8 @@ def main():
         w.writeheader()
         w.writerows(out)
     print(f"{len(out)} event -> {args.output}: {counters}")
-    for k, v in excluded.items():
-        print(f"  bỏ {v} giá trị {k}")
+    for v in excluded.values():
+        print(f"  excluded {v} SourceAccessed value(s)")
 
 
 if __name__ == "__main__":

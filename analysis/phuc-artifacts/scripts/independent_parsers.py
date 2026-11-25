@@ -49,7 +49,7 @@ def sec(s):
 
 
 def read_csv(p):
-    csv.field_size_limit(sys.maxsize)
+    csv.field_size_limit(2**31 - 1)
     with open(p, newline="", encoding="utf-8-sig") as f:
         return list(csv.DictReader(f))
 

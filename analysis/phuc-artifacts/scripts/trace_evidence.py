@@ -44,7 +44,7 @@ _cache = {}
 
 def rows(name):
     if name not in _cache:
-        csv.field_size_limit(sys.maxsize)
+        csv.field_size_limit(2**31 - 1)
         p = SOURCES.get(name)
         if p is None or not p.exists():
             _cache[name] = None
