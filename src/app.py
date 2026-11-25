@@ -19,6 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src import ui_data, ui_evidence, ui_export, ui_findings
 from src.report_generator import ReportGenerator
+from src.schema import VALID_VALIDATION_STATUSES
 
 DEFAULT_DATABASE = "results/CASE01/timeline.db"
 DEFAULT_FINDINGS = "results/CASE01/findings.json"
@@ -624,6 +625,15 @@ def main():
     if summary.total == 0:
         st.info("This timeline database contains no events. Import a case with the pipeline first.")
         return
+    unknown = [
+        value for value in summary.validation_statuses
+        if value and value not in VALID_VALIDATION_STATUSES
+    ]
+    if unknown:
+        st.warning(
+            "This database holds validation statuses outside the schema, shown as unverified: "
+            + ", ".join(f"`{value}`" for value in unknown)
+        )
     filters = sidebar_filters(summary)
     findings, index, findings_note = load_findings(database, findings_path, filters, summary)
 

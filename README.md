@@ -61,8 +61,9 @@ python -m streamlit run src\app.py
 Run the pipeline command above first; it creates `results\CASE01\timeline.db`
 and `results\CASE01\findings.json`, which the dashboard opens by default. Then
 open http://localhost:8501. Stop it with Ctrl+C. See [the UI smoke
-checklist](./docs/week3_day20_ui_smoke.md) and [export
-rules](./docs/week3_day19_ui_export.md).
+checklist](./docs/week3_day20_ui_smoke.md), [export
+rules](./docs/week3_day19_ui_export.md) and [UI changelog and known
+limits](./docs/week3_day21_ui_release.md).
 
 This import exercises committed parser outputs; it does not run Plaso against
 the CASE01 disk image. See [the Day 17 execution report](./docs/week3_day17_execution.md)

@@ -15,7 +15,7 @@ from pathlib import Path
 import re
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from src.schema import VALID_VALIDATION_STATUSES, ForensicEvent
+from src.schema import ForensicEvent
 from src.ui_findings import EventIndex, Finding, as_list, event_ids, linked_events, problems
 
 EXPORT_VERSION = 1
@@ -83,9 +83,6 @@ def event_errors(events: Sequence[ForensicEvent]) -> Dict[int, List[str]]:
         missing = [name for name in REQUIRED_EVENT_FIELDS if not getattr(event, name)]
         if missing:
             errors.setdefault(position, []).append("missing " + ", ".join(missing))
-        status = event.validation_status
-        if status and status not in VALID_VALIDATION_STATUSES:
-            errors.setdefault(position, []).append(f"unknown validation_status {status!r}")
     for duplicates in positions.values():
         if len(duplicates) > 1:
             for position in duplicates:

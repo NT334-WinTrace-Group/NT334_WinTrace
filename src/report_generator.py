@@ -3,16 +3,17 @@ WinTrace - Report Generation Module
 Author: Quyen (Validation & Visualization Engineer)
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from html import escape
 from typing import List, Dict, Any, Optional
 from src.schema import ForensicEvent
+from src.ui_findings import review_status
 
 class ReportGenerator:
     @staticmethod
     def generate_html_report(events: List[ForensicEvent], findings: List[Dict[str, Any]],
                              case_id: Optional[str] = None) -> str:
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         case_ids = sorted({event.case_id for event in events if event.case_id})
         if case_ids and any(not event.case_id for event in events):
             case_ids.append("Unspecified")
@@ -42,14 +43,16 @@ class ReportGenerator:
             <h2>1. Executive Summary</h2>
             <ul>
                 <li>Total Events Filtered/Analyzed: {len(events)} ({len(verified_events)} verified)</li>
-                <li>Total Candidate Findings: {len(findings)}</li>
+                <li>Total Findings: {len(findings)}</li>
                 <li><span class="high-conf">High Confidence Findings: {len(high_conf_findings)}</span></li>
             </ul>
+            <p>Confidence ranks findings for review; it does not validate them.</p>
 
             <h2>2. Key Correlation Findings</h2>
             <table>
                 <tr>
                     <th>Finding ID</th>
+                    <th>Review Status</th>
                     <th>Time Delta (min)</th>
                     <th>Rules</th>
                     <th>Confidence</th>
@@ -62,6 +65,7 @@ class ReportGenerator:
             html_content += f"""
                 <tr>
                     <td>{escape(str(f.get('finding_id')))}</td>
+                    <td>{escape(review_status(f))}</td>
                     <td>{escape(str(f.get('time_delta_minutes')))}</td>
                     <td>{escape(rules)}</td>
                     <td>{escape(str(f.get('confidence_level')))} ({escape(str(f.get('confidence_score')))})</td>

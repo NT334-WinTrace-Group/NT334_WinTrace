@@ -1,6 +1,6 @@
 # Tuần 3 – Ngày 15: Kiểm kê UI
 
-Kiểm kê ban đầu theo `src/app.py` tại `dev` `8053b34`; đã cập nhật đến Ngày 20. `[x]` đã có, `[ ]` còn thiếu.
+Kiểm kê ban đầu theo `src/app.py` tại `dev` `8053b34`; đã cập nhật đến Ngày 21. `[x]` đã có, `[ ]` còn thiếu.
 
 ## Ngày 16 – Timeline và filters
 - [x] Bảng event; lọc ngày UTC, path, keyword, một artifact (AND)
@@ -40,7 +40,7 @@ Kiểm kê ban đầu theo `src/app.py` tại `dev` `8053b34`; đã cập nhật
 - [x] P0: cache theo path, không làm mới khi DB/JSON thay đổi (Ngày 18: khóa cache theo mtime và kích thước)
 - [x] P0: smoke test CASE01 trong venv sạch; lệnh chạy trong README
 - [x] P1: test tự động cho UI
-- [ ] P1: changelog, known limits
+- [x] P1: changelog, known limits
 
 ## Ngoài kế hoạch Ngày 15–21, đề có yêu cầu
 - [ ] Trang import evidence (metadata, hash): cần nhóm quyết định phạm vi
