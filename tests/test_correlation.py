@@ -125,6 +125,93 @@ class TestCorrelation(unittest.TestCase):
         self.assertIn("R05", f_deletion.matched_rules)
         self.assertEqual(f_deletion.confidence_level, "HIGH")
 
+    @staticmethod
+    def _case_pair(case_id, prefix, event_ids=None):
+        shared_path = r"C:\Cases\shared\report.docx"
+        event_a_id, event_b_id = event_ids or (f"{prefix}-LNK", f"{prefix}-RB")
+        return [
+            ForensicEvent(
+                event_id=event_a_id,
+                timestamp="2026-10-25T02:10:00+00:00",
+                timestamp_desc="LNK Target Accessed",
+                artifact_source="LNK",
+                source_file=f"{prefix}.lnk",
+                target_path=shared_path,
+                message="Shortcut target",
+                case_id=case_id,
+            ),
+            ForensicEvent(
+                event_id=event_b_id,
+                timestamp="2026-10-25T02:11:00+00:00",
+                timestamp_desc="Deletion Timestamp",
+                artifact_source="RecycleBin",
+                source_file=f"{prefix}.bin",
+                target_path=shared_path,
+                message="Recycle Bin item",
+                case_id=case_id,
+            ),
+        ]
+
+    def test_finding_ids_are_case_scoped_and_stable(self):
+        engine = CorrelationEngine()
+        events_a = self._case_pair("CASE01", "A")
+        events_b = self._case_pair("CASE02", "B")
+        findings_a = engine.correlate(events_a)
+        findings_b = engine.correlate(events_b)
+
+        self.assertEqual(len(findings_a), 1)
+        self.assertEqual(len(findings_b), 1)
+        self.assertNotEqual(findings_a[0].finding_id, findings_b[0].finding_id)
+        self.assertEqual(findings_a[0].case_id, "CASE01")
+        self.assertEqual(findings_b[0].case_id, "CASE02")
+        self.assertEqual(findings_a[0].finding_id, engine.correlate(events_a)[0].finding_id)
+
+    def test_finding_ids_are_unique_for_same_event_ids_in_different_cases(self):
+        engine = CorrelationEngine()
+        event_ids = ("EVT-001", "EVT-002")
+        events_a = self._case_pair("CASE01", "A", event_ids)
+        events_b = self._case_pair("CASE02", "B", event_ids)
+
+        finding_a = engine.correlate(events_a)[0]
+        finding_b = engine.correlate(events_b)[0]
+
+        self.assertNotEqual(finding_a.finding_id, finding_b.finding_id)
+        self.assertEqual(
+            finding_a.finding_id,
+            engine.correlate(list(reversed(events_a)))[0].finding_id,
+        )
+        self.assertEqual(
+            finding_b.finding_id,
+            engine.correlate(events_b)[0].finding_id,
+        )
+
+    def test_blank_case_ids_share_one_unspecified_namespace(self):
+        engine = CorrelationEngine()
+        events = self._case_pair(None, "A")
+        events[1].case_id = "  "
+
+        finding = engine.correlate(events)[0]
+
+        self.assertIsNone(finding.case_id)
+        self.assertEqual(
+            finding.finding_id,
+            engine.correlate(list(reversed(events)))[0].finding_id,
+        )
+
+    def test_duplicate_event_ids_in_one_case_are_rejected(self):
+        events = self._case_pair("CASE01", "A")
+        events[1].event_id = events[0].event_id
+
+        with self.assertRaisesRegex(ValueError, "Duplicate event_id.*CASE01"):
+            CorrelationEngine().correlate(events)
+
+    def test_correlation_does_not_create_findings_across_cases(self):
+        event_a = self._case_pair("CASE01", "A")[0]
+        event_b = self._case_pair("CASE02", "B")[0]
+        event_b.target_path = event_a.target_path
+
+        self.assertEqual(CorrelationEngine().correlate([event_a, event_b]), [])
+
 
 if __name__ == "__main__":
     unittest.main()
