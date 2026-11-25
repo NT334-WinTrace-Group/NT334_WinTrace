@@ -5,7 +5,10 @@ Compatible with both unittest and pytest.
 
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from src.normalizer import PlasoNormalizer, ShellBagsNormalizer
+from src.schema import ForensicEvent
+from src.timeline_parser import TimelineParser
 
 
 class TestNormalizer(unittest.TestCase):
@@ -53,6 +56,99 @@ class TestNormalizer(unittest.TestCase):
         self.assertEqual(event.timestamp_type, "Prefetch_LastRun")
         self.assertEqual(event.case_id, "CASE01")
         self.assertIn("plaso:prefetch", event.evidence_reference)
+
+    def test_normalize_record_preserves_raw_path(self):
+        raw_path = "E:/Evidence//Nguyễn/資料/file.raw"
+        event = PlasoNormalizer.normalize_record({
+            "datetime": "2026-10-25T02:14:00+00:00",
+            "target_path": raw_path,
+            "raw_path": raw_path,
+            "parser": "file",
+            "artifact_source": "Generic",
+        }, 1)
+
+        self.assertEqual(event.target_path, "E:\\Evidence\\Nguyễn\\資料\\file.raw")
+        self.assertEqual(event.extra_attributes["raw_path"], raw_path)
+
+    def test_filestat_does_not_claim_parser_activity_for_an_artifact(self):
+        event = PlasoNormalizer.normalize_record({
+            "datetime": "2026-10-25T02:14:00+00:00",
+            "parser": "filestat",
+            "artifact_source": "Prefetch",
+            "display_name": r"C:\Windows\Prefetch\WINWORD.EXE-5C48A1B2.pf",
+        }, 1)
+
+        self.assertEqual(event.artifact_source, "Generic")
+        self.assertEqual(event.parser, "filestat")
+
+    def test_normalizer_rejects_unsupported_explicit_artifact(self):
+        with self.assertRaisesRegex(ValueError, "Unsupported artifact source"):
+            PlasoNormalizer.normalize_record({
+                "datetime": "2026-10-25T02:14:00+00:00",
+                "artifact_source": "ImaginaryArtifact",
+            }, 1)
+
+    def test_shellbags_normalizer_preserves_raw_path(self):
+        raw_path = r"\\server\\share\Folder"
+        event = ShellBagsNormalizer._normalize_row({
+            "event_id": "CASE01-SB-RAW",
+            "timestamp": "2026-10-25T02:14:00+00:00",
+            "target_path": raw_path,
+            "artifact_source": "ShellBags",
+        })
+
+        self.assertEqual(event.target_path, r"\\server\share\Folder")
+        self.assertEqual(event.extra_attributes["raw_path"], raw_path)
+
+    def test_shellbags_normalizer_rejects_malformed_extra_attributes(self):
+        with self.assertRaisesRegex(ValueError, "Invalid extra_attributes JSON"):
+            ShellBagsNormalizer._normalize_row({
+                "event_id": "CASE01-SB-INVALID",
+                "timestamp": "2026-10-25T02:14:00+00:00",
+                "artifact_source": "ShellBags",
+                "extra_attributes": "{malformed",
+            })
+
+    def test_csv_export_and_import_preserve_raw_path(self):
+        raw_path = "E:/Evidence//folder/file.raw"
+        event = ForensicEvent(
+            event_id="EVT-RAW-PATH",
+            timestamp="2026-10-25T02:14:00+00:00",
+            timestamp_desc="Created",
+            artifact_source="Generic",
+            source_file="evidence.raw",
+            target_path=raw_path,
+            message="Raw path round-trip",
+            extra_attributes={"raw_path": raw_path},
+        )
+
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "raw_path_roundtrip.csv"
+            TimelineParser.export_to_csv([event], str(output))
+            restored = TimelineParser.load_from_csv(str(output))[0]
+
+        self.assertEqual(restored.target_path, "E:\\Evidence\\folder\\file.raw")
+        self.assertEqual(restored.extra_attributes["raw_path"], raw_path)
+
+    def test_timeline_csv_import_rejects_missing_timestamp_and_malformed_json(self):
+        cases = [
+            (
+                "event_id,timestamp,artifact_source,extra_attributes\n"
+                "E01,,EVTX,{}\n",
+                "Missing timestamp",
+            ),
+            (
+                "event_id,timestamp,artifact_source,extra_attributes\n"
+                "E01,2026-10-25T02:14:00Z,EVTX,{malformed\n",
+                "Invalid extra_attributes JSON",
+            ),
+        ]
+        with TemporaryDirectory() as temp_dir:
+            for index, (contents, expected_error) in enumerate(cases):
+                source = Path(temp_dir) / f"malformed_{index}.csv"
+                source.write_text(contents, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, expected_error):
+                    TimelineParser.load_from_csv(str(source))
 
     def test_shellbags_normalizer(self):
         csv_path = Path("results/case01_shellbags_events.csv")

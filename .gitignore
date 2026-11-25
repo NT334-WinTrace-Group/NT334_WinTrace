@@ -222,6 +222,10 @@ __marimo__/
 # Forensics & Local Data
 *.db
 *.sqlite3
+results/*/normalized.json
+results/*/normalized_events.json
+results/*/findings.json
+results/*/errors.json
 evidence/
 datasets/
 *.evtx

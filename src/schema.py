@@ -79,14 +79,13 @@ VALID_TIMESTAMP_TYPES = {
 
 
 def normalize_windows_path(path_str: Optional[str]) -> str:
-    """Normalize Windows paths for consistent case-insensitive comparison."""
+    """Normalize separators without changing Windows path namespace semantics."""
     if not path_str:
         return ""
-    # Strip quotes and leading/trailing whitespace
-    cleaned = path_str.strip().strip('"\'')
-    # Replace forward slashes with backslashes
+    cleaned = path_str.strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in "\"'":
+        cleaned = cleaned[1:-1]
     cleaned = cleaned.replace('/', '\\')
-    # Remove redundant backslashes
     if cleaned.startswith("\\\\"):
         return "\\\\" + re.sub(r'\\+', r'\\', cleaned.lstrip("\\"))
     cleaned = re.sub(r'\\+', r'\\', cleaned)
@@ -98,7 +97,7 @@ def parse_iso_utc(timestamp_str: str) -> datetime:
     if not timestamp_str:
         raise ValueError("Timestamp string cannot be empty")
     dt = datetime.fromisoformat(timestamp_str)
-    if dt.tzinfo is None:
+    if dt.tzinfo is None or dt.utcoffset() is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
 
@@ -202,6 +201,7 @@ class ForensicEvent:
             self._dt = parse_iso_utc(self.timestamp)
         except Exception as e:
             raise ValueError(f"Invalid timestamp '{self.timestamp}' in event {self.event_id}: {e}")
+        self.timestamp = self._dt.isoformat()
 
         # Normalize target_path
         self.target_path = normalize_windows_path(self.target_path)

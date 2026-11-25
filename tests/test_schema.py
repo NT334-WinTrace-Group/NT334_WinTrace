@@ -29,6 +29,33 @@ class TestSchema(unittest.TestCase):
             r"\\10.11.11.128\secured_drive\Secret Project Data",
         )
 
+    def test_normalize_windows_path_preserves_roots_and_namespaces(self):
+        cases = {
+            r"\\server\\share\\folder": r"\\server\share\folder",
+            "///server/share/folder": r"\\server\share\folder",
+            "E:": "E:",
+            "E:\\": "E:\\",
+            "D:": "D:",
+            "D:\\": "D:\\",
+            "D:/Evidence": "D:\\Evidence",
+            r"\\?\C:\Evidence\file.raw": r"\\?\C:\Evidence\file.raw",
+            r"\\?\UNC\server\share\file.raw": r"\\?\UNC\server\share\file.raw",
+            r"\server\share": r"\server\share",
+            r"\\server": r"\\server",
+            r"::{20D04FE0-3AEA-1069-A2D8-08002B30309D}\Documents": (
+                r"::{20D04FE0-3AEA-1069-A2D8-08002B30309D}\Documents"
+            ),
+            r"C:\Users\Nguyễn\資料\résumé.txt": r"C:\Users\Nguyễn\資料\résumé.txt",
+            r"E:relative\..\file.raw": r"E:relative\..\file.raw",
+        }
+        for raw_path, expected in cases.items():
+            with self.subTest(raw_path=raw_path):
+                self.assertEqual(normalize_windows_path(raw_path), expected)
+
+        self.assertEqual(normalize_windows_path(""), "")
+        self.assertEqual(normalize_windows_path("   "), "")
+        self.assertNotEqual(normalize_windows_path("E:"), normalize_windows_path("E:\\"))
+
     def test_parse_iso_utc(self):
         dt = parse_iso_utc("2026-10-25T02:14:00+00:00")
         self.assertEqual(dt.year, 2026)
