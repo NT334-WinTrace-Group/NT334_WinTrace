@@ -141,12 +141,11 @@ def test_pipeline_fails_before_outputs_when_any_record_is_invalid(
     assert not findings_path.exists()
 
 
-def test_pipeline_rejects_duplicate_event_ids_before_any_output(tmp_path):
+def test_pipeline_rejects_duplicate_event_ids_before_filtering_or_outputs(tmp_path):
     row = _supporting_row()
     input_path = tmp_path / "duplicate-events.csv"
     output_path = tmp_path / "normalized.json"
     database_path = tmp_path / "timeline.db"
-    findings_path = tmp_path / "findings.json"
     _write_rows(input_path, [row, row])
 
     with pytest.raises(ValueError, match="Duplicate event_id"):
@@ -154,12 +153,11 @@ def test_pipeline_rejects_duplicate_event_ids_before_any_output(tmp_path):
             input_file=str(input_path),
             output_file=str(output_path),
             database_file=str(database_path),
-            findings_file=str(findings_path),
+            filter_artifact="Prefetch",
         )
 
     assert not output_path.exists()
     assert not database_path.exists()
-    assert not findings_path.exists()
 
 
 def test_pipeline_cli_returns_nonzero_for_missing_source(tmp_path, monkeypatch, capsys):

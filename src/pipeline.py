@@ -19,7 +19,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.normalizer import PlasoNormalizer, ShellBagsNormalizer
-from src.correlation import CorrelationEngine, normalize_case_id
+from src.correlation import (
+    CorrelationEngine,
+    normalize_case_id,
+    validate_unique_event_ids,
+)
 from src.schema import VALID_ARTIFACTS
 from src.storage import TimelineStore
 from src.timeline_parser import TimelineParser, TargetedFilter
@@ -118,6 +122,10 @@ def run_pipeline(
         raise PipelineInputError("Input files contained no valid events.")
     print(f"[+] Successfully normalized {total_ingested} forensic events.")
 
+    for event in events:
+        event.case_id = normalize_case_id(event.case_id)
+    validate_unique_event_ids(events)
+
     # Step 2: Optional Targeted Filtering
     if filter_user:
         print(f"[*] Applying filter for user: {filter_user}")
@@ -134,9 +142,6 @@ def run_pipeline(
         print(f"[*] Applying filter for artifact: {filter_artifact}")
         events = TargetedFilter.filter_by_artifacts(events, artifacts=[filter_artifact])
         print(f"[+] Events after artifact filter: {len(events)}")
-
-    for event in events:
-        event.case_id = normalize_case_id(event.case_id)
 
     findings = None
     if findings_file:
