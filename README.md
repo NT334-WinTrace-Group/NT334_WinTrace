@@ -52,6 +52,12 @@ The command writes to `results\CASE01\`, keeps the canonical ShellBags CSV as
 the single ShellBags event source, and preserves parser/source labels. A
 `filestat` row is not counted as Prefetch/EVTX/LNK parser activity.
 
+Open the dashboard on that case (local only, database opened read-only):
+
+```powershell
+python -m streamlit run srcpp.py
+```
+
 This import exercises committed parser outputs; it does not run Plaso against
 the CASE01 disk image. See [the Day 17 execution report](./docs/week3_day17_execution.md)
 for the input checksums and runtime limitations, [the Day 18 data API

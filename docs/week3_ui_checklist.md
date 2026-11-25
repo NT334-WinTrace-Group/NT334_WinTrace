@@ -1,15 +1,15 @@
 # Tuần 3 – Ngày 15: Kiểm kê UI
 
-Đối chiếu `src/app.py` tại `dev` `8053b34`, bằng cách đọc code. `[x]` đã có, `[ ]` còn thiếu.
+Kiểm kê ban đầu theo `src/app.py` tại `dev` `8053b34`; Ngày 16 đã cập nhật. `[x]` đã có, `[ ]` còn thiếu.
 
 ## Ngày 16 – Timeline và filters
 - [x] Bảng event; lọc ngày UTC, path, keyword, một artifact (AND)
-- [ ] P0: DB mặc định `results/case01_timeline.db` không có; path sai sẽ tạo file DB rỗng
-- [ ] P0: cột `timestamp_type`, `source_file` và `case_id` trong bảng
-- [ ] P1: lọc theo giờ, lọc `case_id` và `validation_status` (query đã hỗ trợ)
-- [ ] P1: phân trang và tổng số kết quả; hiện chỉ lấy N event đầu
-- [ ] P1: tách empty state: chưa có DB / DB rỗng / filter không khớp / lỗi đọc
-- [ ] P1: filter không khớp không được chặn tab Findings
+- [x] P0: DB mặc định `results/case01_timeline.db` không có; path sai sẽ tạo file DB rỗng
+- [x] P0: cột `timestamp_type`, `source_file` và `case_id` trong bảng
+- [x] P1: lọc theo giờ, lọc `case_id` và `validation_status` (query đã hỗ trợ)
+- [x] P1: phân trang và tổng số kết quả; hiện chỉ lấy N event đầu
+- [x] P1: tách empty state: chưa có DB / DB rỗng / filter không khớp / lỗi đọc
+- [x] P1: filter không khớp không được chặn tab Findings
 
 ## Ngày 17 – Evidence detail
 - [x] timestamp và type, source, case, message, path, status, reference, extra JSON

@@ -68,8 +68,8 @@ Engine hiện để null cho toàn bộ 6.192 finding CASE01, nên tất cả l�
 
 | # | Vấn đề | Đề xuất | Owner |
 |---|---|---|---|
-| 1 | `TimelineStore` tạo file khi path chưa có và chạy migration khi mở | UI kiểm tra file tồn tại; thêm chế độ mở read-only | Nam |
-| 2 | `query()` chưa có `offset`, tổng số dòng và lọc nhiều artifact | Thêm tham số tùy chọn, tương thích ngược, cho Ngày 16 | Nam |
+| 1 | `TimelineStore` tạo file khi path chưa có và chạy migration khi mở | Ngày 16: đã thêm `TimelineStore(path, read_only=True)`, chờ Nam review | Nam |
+| 2 | `query()` chưa có `offset`, tổng số dòng và lọc nhiều artifact | Ngày 16: đã thêm `offset`, `artifacts`, `count_matching()`, `distinct_values()`, chờ Nam review | Nam |
 | 3 | Filter path chỉ tìm `target_path`, không tìm `fs_path` / `shellbag_path` | Giữ ở v1.0 hoặc mở rộng query | Nam, Phúc |
 | 4 | Ai ghi `finding.validation_status` sau review | Thi ghi vào output; UI chỉ hiển thị | Thi |
 | 5 | Nhãn và câu chữ mục 3 | Phúc/Thi duyệt | Phúc, Thi |

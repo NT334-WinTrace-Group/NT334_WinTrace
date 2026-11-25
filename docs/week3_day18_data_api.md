@@ -22,6 +22,16 @@ preserved.
   formats are migrated transactionally; an unknown fingerprint or collision
   aborts initialization rather than silently rewriting a record.
 
+## Read-only access and pagination (UI Day 16)
+
+- `TimelineStore(path, read_only=True)` never creates, migrates, or writes the
+  database. A missing file raises `FileNotFoundError`; a non-v2 schema raises
+  `ValueError`.
+- `query()` also accepts `artifacts` (any of several sources) and `offset`.
+  `count_matching()` takes the same filters and returns the full row count.
+- `distinct_values()` lists stored cases, artifacts, or validation statuses.
+- `NOT_RECORDED` selects rows with no `case_id` / `validation_status`.
+
 ## Example
 
 ```python
