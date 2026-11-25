@@ -6,7 +6,6 @@ independent forensic verification. They require committed Phuc output CSVs.
 """
 
 import csv
-import sys
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,7 +18,7 @@ def _csv(relpath):
     path = ROOT / relpath
     assert path.is_file(), f'Missing committed evidence file: {path}'
 
-    csv.field_size_limit(sys.maxsize)
+    csv.field_size_limit(2**31 - 1)
 
     with path.open(encoding='utf-8-sig', newline='') as fh:
         return list(csv.DictReader(fh))

@@ -176,20 +176,6 @@ def is_program_file_pair(
 
     return False
 
-    # General association if time is close and program can open that document
-    exec_name = PureWindowsPath(event_prog.target_path).name.lower()
-    doc_ext = PureWindowsPath(event_file.target_path).suffix.lower()
-
-    office_exts = {".docx", ".doc", ".dotx"}
-    if "winword" in exec_name and doc_ext in office_exts:
-        return True
-    if "excel" in exec_name and doc_ext in {".xlsx", ".xls", ".csv"}:
-        return True
-    if "notepad" in exec_name and doc_ext in {".txt", ".log", ".ini"}:
-        return True
-
-    return False
-
 
 def _matches_timestamp(event: ForensicEvent, types: set[str], legacy_descs: set[str]) -> bool:
     """Use the typed timestamp when available and support legacy event rows."""
@@ -385,31 +371,3 @@ class CorrelationEngine:
                 # Remove fields not in fieldnames
                 row = {k: v for k, v in row.items() if k in fieldnames}
                 writer.writerow(row)
-def test_r04_prefetch_files_loaded_user_supports_direct_file_link():
-    doc = r"C:\Users\informant\Desktop\Resignation_Letter_(Iaman_Informant).docx"
-
-    pf = event(
-        "PF-C5", "2015-03-25T15:24:48+00:00",
-        "Prefetch", r"C:\Program Files\Microsoft Office\Office15\WINWORD.EXE",
-        "WINWORD execution",
-    )
-    pf.timestamp_type = "Prefetch_LastRun"
-    pf.extra_attributes["files_loaded_user"] = [doc]
-
-    lnk = event(
-        "LNK-C5", "2015-03-25T15:29:08+00:00",
-        "LNK", doc, "Shortcut updated",
-    )
-
-    finding = finding_for([pf, lnk], "PF-C5", "LNK-C5")
-
-    assert finding is not None
-    assert "R04" in finding.matched_rules
-    assert "R03" in finding.matched_rules
-
-    unrelated = event(
-        "LNK-OTHER", "2015-03-25T15:29:08+00:00",
-        "LNK", r"C:\Other\unrelated.docx", "Unrelated shortcut",
-    )
-    other = finding_for([pf, unrelated], "PF-C5", "LNK-OTHER")
-    assert other is None or "R04" not in other.matched_rules
