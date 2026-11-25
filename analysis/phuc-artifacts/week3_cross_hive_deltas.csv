@@ -1,0 +1,15 @@
+timestamp_type,fs_path,usrclass_event,usrclass_utc,ntuser_event,ntuser_utc,delta_seconds_ntuser_minus_usrclass
+ShellBag_KeyLastWrite,Desktop\Computers and Devices\10.11.11.128,CASE01-SB0116,2015-03-23T20:23:28+00:00,CASE01-SB0120,2015-03-23T20:24:01+00:00,33
+ShellBag_KeyLastWrite,\\10.11.11.128\secured_drive,CASE01-SB0118,2015-03-23T20:23:28+00:00,CASE01-SB0122,2015-03-23T20:24:01+00:00,33
+ShellBag_LastInteracted,Desktop\Computers and Devices\10.11.11.128,CASE01-SB0115,2015-03-23T20:23:28+00:00,CASE01-SB0119,2015-03-23T20:24:01+00:00,33
+ShellBag_LastInteracted,\\10.11.11.128\secured_drive,CASE01-SB0117,2015-03-23T20:23:28+00:00,CASE01-SB0121,2015-03-23T20:24:01+00:00,33
+ShellBag_FirstInteracted,\\10.11.11.128\secured_drive\Common Data,CASE01-SB0123,2015-03-23T20:24:01+00:00,CASE01-SB0124,2015-03-23T20:24:07+00:00,6
+ShellBag_FirstInteracted,\\10.11.11.128\secured_drive\Past Projects,CASE01-SB0125,2015-03-23T20:24:08+00:00,CASE01-SB0126,2015-03-23T20:24:09+00:00,1
+ShellBag_FirstInteracted,\\10.11.11.128\secured_drive\Secret Project Data\design,CASE01-SB0131,2015-03-23T20:24:12+00:00,CASE01-SB0132,2015-03-23T20:24:14+00:00,2
+ShellBag_FirstInteracted,\\10.11.11.128\secured_drive\Secret Project Data\pricing decision,CASE01-SB0133,2015-03-23T20:24:15+00:00,CASE01-SB0141,2015-03-23T20:24:33+00:00,18
+ShellBag_FirstInteracted,\\10.11.11.128\secured_drive\Secret Project Data\final,CASE01-SB0134,2015-03-23T20:24:16+00:00,CASE01-SB0144,2015-03-23T20:24:35+00:00,19
+ShellBag_FirstInteracted,\\10.11.11.128\secured_drive\Secret Project Data\technical review,CASE01-SB0135,2015-03-23T20:24:18+00:00,CASE01-SB0136,2015-03-23T20:24:19+00:00,1
+ShellBag_FirstInteracted,\\10.11.11.128\secured_drive\Secret Project Data\proposal,CASE01-SB0137,2015-03-23T20:24:20+00:00,CASE01-SB0138,2015-03-23T20:24:22+00:00,2
+ShellBag_FirstInteracted,\\10.11.11.128\secured_drive\Secret Project Data\progress,CASE01-SB0139,2015-03-23T20:24:27+00:00,CASE01-SB0140,2015-03-23T20:24:29+00:00,2
+ShellBag_KeyLastWrite,\\10.11.11.128\secured_drive\Secret Project Data\pricing decision,CASE01-SB0159,2015-03-23T20:28:17+00:00,CASE01-SB0155,2015-03-23T20:28:17+00:00,0
+ShellBag_LastInteracted,\\10.11.11.128\secured_drive\Secret Project Data\pricing decision,CASE01-SB0158,2015-03-23T20:28:17+00:00,CASE01-SB0154,2015-03-23T20:28:17+00:00,0
