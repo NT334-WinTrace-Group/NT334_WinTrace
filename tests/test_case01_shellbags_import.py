@@ -122,9 +122,6 @@ def test_cross_hive_twins_are_linked(events):
             assert ids[t].source_file != e.source_file
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "src/schema.py::normalize_windows_path gộp '\\\\' đầu UNC thành '\\' -> mất dạng "
-    "\\\\host\\share. Khi đã sửa, test sẽ XPASS: xóa marker xfail."))
 def test_unc_target_path_survives_normalization(events):
     e = next(e for e in events if e.event_id == "CASE01-SB0033")
     assert e.target_path.startswith("\\\\10.11.11.128\\")
