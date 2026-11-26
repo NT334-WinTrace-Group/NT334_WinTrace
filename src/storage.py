@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 import sqlite3
@@ -81,34 +81,47 @@ class TimelineStore:
             "username": "username",
             "validation": "validation_status",
             "case": "case_id",
+            "source_file": "source_file",
         }
         for name, column in indexes.items():
             self.connection.execute(f"CREATE INDEX IF NOT EXISTS idx_events_{name} ON events({column})")
+        self.connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_artifact_nocase "
+            "ON events(artifact_source COLLATE NOCASE)"
+        )
+        self.connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_case_nocase "
+            "ON events(case_id COLLATE NOCASE)"
+        )
+        self.connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_case_artifact_timestamp "
+            "ON events(case_id, artifact_source, timestamp)"
+        )
 
     @staticmethod
-    def fingerprint(event: ForensicEvent) -> str:
+    def _fingerprint_for(event: ForensicEvent, timestamp: str, include_identity: bool) -> str:
         case_id = event.case_id or event.extra_attributes.get("case_id") or ""
         values = (
-            event.event_id, case_id,
-            event.timestamp, event.timestamp_desc, event.artifact_source,
+            (event.event_id, case_id, timestamp)
+            if include_identity
+            else (timestamp,)
+        ) + (
+            event.timestamp_desc, event.artifact_source,
             event.source_file, event.target_path, event.message, event.data_type,
             event.parser, event.user_sid or "", event.username or "",
             event.confidence_level,
             json.dumps(event.extra_attributes, ensure_ascii=False, sort_keys=True),
         )
         return hashlib.sha256("\x1f".join(values).encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def fingerprint(event: ForensicEvent) -> str:
+        return TimelineStore._fingerprint_for(event, event.dt.isoformat(), include_identity=True)
 
     @staticmethod
     def legacy_fingerprint(event: ForensicEvent) -> str:
         """Fingerprint format used before event_id/case_id were added."""
-        values = (
-            event.timestamp, event.timestamp_desc, event.artifact_source,
-            event.source_file, event.target_path, event.message, event.data_type,
-            event.parser, event.user_sid or "", event.username or "",
-            event.confidence_level,
-            json.dumps(event.extra_attributes, ensure_ascii=False, sort_keys=True),
-        )
-        return hashlib.sha256("\x1f".join(values).encode("utf-8")).hexdigest()
+        return TimelineStore._fingerprint_for(event, event.timestamp, include_identity=False)
 
     def _migrate_fingerprints(self) -> None:
         rows = self.connection.execute("""
@@ -124,23 +137,43 @@ class TimelineStore:
             data = dict(row)
             stored_fingerprint = data.pop("fingerprint")
             data.pop("id")
+            stored_timestamp = data["timestamp"]
             extra_attributes = json.loads(data.pop("extra_attributes") or "{}")
             data["extra_attributes"] = extra_attributes
             event = ForensicEvent.from_dict(data)
-            legacy_fingerprint = self.legacy_fingerprint(event)
-            if stored_fingerprint != legacy_fingerprint:
+            legacy_fingerprint = self._fingerprint_for(
+                event, stored_timestamp, include_identity=False
+            )
+            previous_fingerprint = self._fingerprint_for(
+                event, stored_timestamp, include_identity=True
+            )
+            new_fingerprint = self.fingerprint(event)
+            needs_timestamp_migration = stored_timestamp != event.timestamp
+            if (
+                stored_fingerprint != legacy_fingerprint
+                and stored_fingerprint != previous_fingerprint
+                and stored_fingerprint != new_fingerprint
+            ):
+                if needs_timestamp_migration:
+                    raise RuntimeError(
+                        f"Cannot safely normalize timestamp for event row {row['id']}: "
+                        "its fingerprint does not match a known format."
+                    )
                 continue
 
-            new_fingerprint = self.fingerprint(event)
             collision = self.connection.execute(
                 "SELECT 1 FROM events WHERE fingerprint = ? AND fingerprint != ?",
                 (new_fingerprint, stored_fingerprint),
             ).fetchone()
-            if collision is None:
-                self.connection.execute(
-                    "UPDATE events SET fingerprint = ? WHERE id = ?",
-                    (new_fingerprint, row["id"]),
+            if collision is not None:
+                raise RuntimeError(
+                    f"Cannot safely migrate fingerprint for event row {row['id']}: "
+                    "the normalized fingerprint already exists."
                 )
+            self.connection.execute(
+                "UPDATE events SET fingerprint = ?, timestamp = ? WHERE id = ?",
+                (new_fingerprint, event.timestamp, row["id"]),
+            )
 
     def insert_events(self, events: Iterable[ForensicEvent]) -> int:
         rows = []
@@ -300,29 +333,47 @@ class TimelineStore:
         case_id: Optional[str] = None,
         limit: Optional[int] = None,
         offset: int = 0,
+        path: Optional[str] = None,
+        validation_status: Optional[str] = None,
     ) -> List[ForensicEvent]:
         clauses: List[str] = []
         parameters: List[Any] = []
-        if start:
-            clauses.append("julianday(timestamp) >= julianday(?)")
-            parameters.append(start.isoformat())
-        if end:
-            clauses.append("julianday(timestamp) <= julianday(?)")
-            parameters.append(end.isoformat())
+        start_utc = self._utc_bound(start, "start")
+        end_utc = self._utc_bound(end, "end")
+        if start_utc and end_utc and start_utc > end_utc:
+            raise ValueError("start must not be later than end")
+        if start_utc is not None:
+            clauses.append("timestamp >= ?")
+            parameters.append(start_utc)
+        if end_utc is not None:
+            clauses.append("timestamp <= ?")
+            parameters.append(end_utc)
         if artifact:
-            clauses.append("lower(artifact_source) = lower(?)")
+            clauses.append("artifact_source = ? COLLATE NOCASE")
             parameters.append(artifact)
         if keyword:
-            clauses.append("(lower(target_path) LIKE lower(?) OR lower(message) LIKE lower(?))")
-            pattern = f"%{keyword}%"
-            parameters.extend([pattern, pattern])
+            clauses.append(
+                "(target_path COLLATE NOCASE LIKE ? ESCAPE '\\' "
+                "OR source_file COLLATE NOCASE LIKE ? ESCAPE '\\' "
+                "OR message COLLATE NOCASE LIKE ? ESCAPE '\\' "
+                "OR event_id COLLATE NOCASE LIKE ? ESCAPE '\\' "
+                "OR evidence_reference COLLATE NOCASE LIKE ? ESCAPE '\\')"
+            )
+            pattern = self._contains_pattern(keyword)
+            parameters.extend([pattern] * 5)
+        if path:
+            clauses.append("target_path COLLATE NOCASE LIKE ? ESCAPE '\\'")
+            parameters.append(self._contains_pattern(path))
         if case_id:
-            clauses.append("lower(case_id) = lower(?)")
+            clauses.append("case_id = ? COLLATE NOCASE")
             parameters.append(case_id)
+        if validation_status:
+            clauses.append("validation_status = ? COLLATE NOCASE")
+            parameters.append(validation_status)
         sql = "SELECT * FROM events"
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        sql += " ORDER BY julianday(timestamp), id"
+        sql += " ORDER BY timestamp, id"
         if limit is not None:
             if limit < 1:
                 raise ValueError("limit must be positive")
@@ -336,6 +387,21 @@ class TimelineStore:
             sql += " OFFSET ?"
             parameters.append(offset)
         return [self._row_to_event(row) for row in self.connection.execute(sql, parameters)]
+
+    @staticmethod
+    def _utc_bound(value: Optional[datetime], name: str) -> Optional[str]:
+        if value is None:
+            return None
+        if not isinstance(value, datetime):
+            raise TypeError(f"{name} must be a datetime")
+        if value.tzinfo is None or value.utcoffset() is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat()
+
+    @staticmethod
+    def _contains_pattern(value: str) -> str:
+        escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return f"%{escaped}%"
 
     @staticmethod
     def _row_to_event(row: sqlite3.Row) -> ForensicEvent:

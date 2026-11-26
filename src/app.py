@@ -5,7 +5,7 @@ Author: Quyen (Validation & Visualization Engineer)
 
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, time, timezone
 import json
 import pandas as pd
 import streamlit as st
@@ -21,10 +21,25 @@ from src.report_generator import ReportGenerator
 st.set_page_config(page_title="WinTrace Dashboard", page_icon="🔍", layout="wide")
 
 @st.cache_data
-def load_events(db_path: str, start_dt=None, end_dt=None, artifact=None, keyword=None, limit=1000):
+def load_events(
+    db_path: str,
+    start_dt=None,
+    end_dt=None,
+    artifact=None,
+    keyword=None,
+    limit=1000,
+    path=None,
+):
     try:
         with TimelineStore(db_path) as store:
-            return store.query(start=start_dt, end=end_dt, artifact=artifact, keyword=keyword, limit=limit)
+            return store.query(
+                start=start_dt,
+                end=end_dt,
+                artifact=artifact,
+                keyword=keyword,
+                limit=limit,
+                path=path,
+            )
     except Exception as e:
         st.error(f"Error loading database: {e}")
         return []
@@ -51,7 +66,21 @@ def main():
     
     st.sidebar.markdown("---")
     st.sidebar.header("🔍 Filters")
-    keyword = st.sidebar.text_input("Keyword Search (Path/Message)")
+    date_range = st.sidebar.date_input("UTC date range", value=())
+    start_dt = end_dt = None
+    if (
+        isinstance(date_range, (tuple, list))
+        and len(date_range) == 2
+        and date_range[0] is not None
+        and date_range[1] is not None
+    ):
+        if date_range[0] <= date_range[1]:
+            start_dt = datetime.combine(date_range[0], time.min, tzinfo=timezone.utc)
+            end_dt = datetime.combine(date_range[1], time.max, tzinfo=timezone.utc)
+        else:
+            st.sidebar.error("The UTC start date must not be later than the end date.")
+    path_filter = st.sidebar.text_input("Path contains")
+    keyword = st.sidebar.text_input("Keyword Search")
     artifact_filter = st.sidebar.selectbox("Artifact Source", options=["ALL"] + sorted(list(VALID_ARTIFACTS)))
     limit_filter = st.sidebar.number_input("Max Events", min_value=100, max_value=10000, value=1000, step=100)
     
@@ -66,7 +95,15 @@ def main():
     keyword_query = None if not keyword else keyword
     
     with st.spinner('Loading data...'):
-        events = load_events(db_path, artifact=artifact_query, keyword=keyword_query, limit=limit_filter)
+        events = load_events(
+            db_path,
+            start_dt=start_dt,
+            end_dt=end_dt,
+            artifact=artifact_query,
+            keyword=keyword_query,
+            limit=limit_filter,
+            path=path_filter or None,
+        )
         findings_dict = load_findings(findings_path)
 
     if not events:

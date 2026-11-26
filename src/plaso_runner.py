@@ -17,7 +17,7 @@ class PlasoCommandError(RuntimeError):
 @dataclass(frozen=True)
 class PlasoRunResult:
     command: List[str]
-    returncode: int
+    returncode: Optional[int]
     stdout: str
     stderr: str
     started_at: str
@@ -47,6 +47,18 @@ class PlasoRunner:
                 check=False,
             )
         except OSError as exc:
+            finished = datetime.now(timezone.utc)
+            self._write_log(
+                PlasoRunResult(
+                    command=list(command),
+                    returncode=None,
+                    stdout="",
+                    stderr=str(exc),
+                    started_at=started.isoformat(),
+                    finished_at=finished.isoformat(),
+                ),
+                log_path,
+            )
             raise PlasoCommandError(
                 f"Unable to start Plaso command {list(command)!r}: {exc}"
             ) from exc
@@ -91,6 +103,7 @@ class PlasoRunner:
         log_path: Optional[str] = None,
         extra_args: Optional[Sequence[str]] = None,
     ) -> PlasoRunResult:
+        Path(storage_file).parent.mkdir(parents=True, exist_ok=True)
         command = [
             self.executable,
             "--status_view", "none",
@@ -111,6 +124,7 @@ class PlasoRunner:
         log_path: Optional[str] = None,
         extra_args: Optional[Sequence[str]] = None,
     ) -> PlasoRunResult:
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
         command = [
             self.psort_executable,
             "-o", output_format,

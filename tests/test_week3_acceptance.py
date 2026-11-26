@@ -12,10 +12,16 @@ def _csv(path):
 
 
 def test_manifest_corrects_derived_dataset_size_and_hash():
+    import hashlib
     manifest = {row["item_id"]: row for row in _csv("docs/evidence_manifest.csv")}
     row = manifest["CASE01-EVT-001"]
+    data = (ROOT / row["relative_path"]).read_bytes()
+    if row["hash_scope"] == "normalized_lf_file_sha256":
+        data = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    elif row["hash_scope"] != "working_tree_file_sha256":
+        raise AssertionError(f"Unsupported hash scope: {row['hash_scope']}")
     assert row["file_size_bytes"] == "575015"
-    assert row["sha256"] == "d7fa967fca451a9d6fcebc42f057dffa2f4712c52969711bb5bd834c3e6f9dd5"
+    assert row["sha256"] == hashlib.sha256(data).hexdigest()
     assert row["integrity_status"] == "REGENERABLE"
     assert row["hash_scope"] == "normalized_lf_file_sha256"
 

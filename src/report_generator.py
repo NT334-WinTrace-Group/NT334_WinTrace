@@ -17,14 +17,17 @@ class ReportGenerator:
         """Serialize timeline events with the schema-v2 provenance fields."""
         fieldnames = [
             "event_id", "case_id", "timestamp", "timestamp_type",
-            "artifact_source", "source_file", "target_path", "message",
+            "artifact_source", "parser", "source_file", "target_path", "message",
             "evidence_reference", "validation_status", "user_sid", "username",
+            "extra_attributes",
         ]
         output = io.StringIO(newline="")
         writer = csv.DictWriter(output, fieldnames=fieldnames)
         writer.writeheader()
         for event in events:
-            writer.writerow({name: getattr(event, name, "") or "" for name in fieldnames})
+            row = {name: getattr(event, name, "") or "" for name in fieldnames}
+            row["extra_attributes"] = json.dumps(event.extra_attributes, ensure_ascii=False, sort_keys=True)
+            writer.writerow(row)
         return output.getvalue()
 
     @staticmethod
@@ -68,6 +71,8 @@ class ReportGenerator:
                 details = escape(json.dumps({
                     "details": check.get("details", []),
                     "contradictions": check.get("contradictions", []),
+                    "temporal_anomalies": check.get("temporal_anomalies", []),
+                    "unresolved": check.get("unresolved", []),
                 }, ensure_ascii=False, indent=2))
                 validation_html += (
                     f"<h3>{escape(str(check.get('hypothesis', name)))}</h3>"
@@ -111,22 +116,40 @@ class ReportGenerator:
             <h2>3. Key Correlation Findings</h2>
             <table>
                 <tr>
+                    <th>Candidate Type</th>
                     <th>Finding ID</th>
+                    <th>Case ID</th>
+                    <th>Event IDs</th>
+                    <th>Evidence References</th>
                     <th>Time Delta (min)</th>
                     <th>Rules</th>
                     <th>Confidence</th>
+                    <th>Validation Status</th>
                     <th>Explanation</th>
                 </tr>
         """
         
         for f in findings:
             rules = ", ".join(f.get("matched_rules", []))
+            event_ids = f.get("event_ids") or [
+                value for value in (f.get("event_a_id"), f.get("event_b_id")) if value
+            ]
+            evidence_references = f.get("evidence_references") or f.get("source_references") or []
+            if isinstance(evidence_references, str):
+                evidence_references = [evidence_references]
+            if isinstance(event_ids, str):
+                event_ids = [event_ids]
             html_content += f"""
                 <tr>
+                    <td>{escape(str(f.get('candidate_type', 'Automated candidate')))}</td>
                     <td>{escape(str(f.get('finding_id')))}</td>
+                    <td>{escape(str(f.get('case_id') or case_id or 'Unspecified'))}</td>
+                    <td>{escape(', '.join(str(value) for value in event_ids))}</td>
+                    <td>{escape('; '.join(str(value) for value in evidence_references))}</td>
                     <td>{escape(str(f.get('time_delta_minutes')))}</td>
                     <td>{escape(rules)}</td>
                     <td>{escape(str(f.get('confidence_level')))} ({escape(str(f.get('confidence_score')))})</td>
+                    <td>{escape(str(f.get('validation_status') or f.get('status') or 'unverified'))}</td>
                     <td>{escape(str(f.get('explanation')))}</td>
                 </tr>
             """

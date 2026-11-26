@@ -24,7 +24,26 @@ def load_review_candidates(path: Path, case_id: str) -> list[dict[str, str]]:
         return [row for row in csv.DictReader(handle) if row.get("case_id") == case_id]
 
 
-def export_case_report(database: Path, case_id: str, output_dir: Path, candidates_file: Path) -> dict[str, Path]:
+def load_engine_findings(path: Path | None, case_id: str) -> list[dict]:
+    if path is None:
+        return []
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(payload, dict):
+        rows = payload.get("rule_engine_candidates", payload.get("findings", []))
+    else:
+        rows = payload
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise ValueError("Findings JSON must be a list or contain a findings list")
+    return [row for row in rows if not row.get("case_id") or row.get("case_id") == case_id]
+
+
+def export_case_report(
+    database: Path,
+    case_id: str,
+    output_dir: Path,
+    candidates_file: Path,
+    findings_file: Path | None = None,
+) -> dict[str, Path]:
     if not database.is_file():
         raise FileNotFoundError(f"SQLite database does not exist: {database}")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -36,12 +55,17 @@ def export_case_report(database: Path, case_id: str, output_dir: Path, candidate
 
     candidates = load_review_candidates(candidates_file, case_id)
     validation = CrossValidator(events).run_all_checks()
-    html_findings = [{
+    manual_findings = [{
+        **item,
+        "candidate_type": "Manual review candidate",
         "finding_id": item.get("candidate_id", "Unknown"),
+        "case_id": item.get("case_id", case_id),
         "confidence_level": "UNVERIFIED",
         "confidence_score": "Not assessed",
+        "validation_status": item.get("validation_status", "unverified"),
         "time_delta_minutes": round(float(item.get("time_delta_seconds") or 0) / 60, 2),
         "matched_rules": (item.get("candidate_rules") or "").split(";"),
+        "evidence_references": item.get("source_references", ""),
         "explanation": (
             f"{item.get('supported_observation', '')} "
             f"Safe interpretation: {item.get('safe_interpretation', '')} "
@@ -50,6 +74,15 @@ def export_case_report(database: Path, case_id: str, output_dir: Path, candidate
             f"Sources: {item.get('source_references', '')}"
         ),
     } for item in candidates]
+    engine_findings = load_engine_findings(findings_file, case_id)
+    html_findings = manual_findings + [{
+        **item,
+        "candidate_type": "Automated correlation candidate",
+        "finding_id": item.get("finding_id", item.get("id", "Unknown")),
+        "case_id": item.get("case_id", case_id),
+        "validation_status": item.get("validation_status", "unverified"),
+        "matched_rules": item.get("matched_rules", []),
+    } for item in engine_findings]
 
     paths = {
         "csv": output_dir / f"{case_id}_timeline.csv",
@@ -59,7 +92,8 @@ def export_case_report(database: Path, case_id: str, output_dir: Path, candidate
     paths["csv"].write_text(ReportGenerator.generate_csv_report(events), encoding="utf-8-sig", newline="")
     paths["json"].write_text(
         ReportGenerator.generate_json_report(
-            events, case_id, review_candidates=candidates, validation_report=validation,
+            events, case_id, review_candidates=candidates,
+            rule_engine_candidates=engine_findings, validation_report=validation,
         ),
         encoding="utf-8",
     )
@@ -72,16 +106,22 @@ def export_case_report(database: Path, case_id: str, output_dir: Path, candidate
     csv_text = paths["csv"].read_text(encoding="utf-8-sig")
     html_text = paths["html"].read_text(encoding="utf-8")
     json_data = json.loads(paths["json"].read_text(encoding="utf-8"))
-    required_columns = ("event_id", "timestamp_type", "evidence_reference")
+    required_columns = (
+        "event_id", "case_id", "timestamp", "timestamp_type", "parser",
+        "source_file", "evidence_reference", "validation_status", "extra_attributes",
+    )
     header = csv_text.splitlines()[0]
     if any(column not in header for column in required_columns):
         raise AssertionError("CSV export omitted a required provenance column")
-    if events[0].event_id not in html_text or not events[0].timestamp_type or events[0].timestamp_type not in html_text:
+    if events[0].event_id not in html_text or (
+        events[0].timestamp_type and events[0].timestamp_type not in html_text
+    ):
         raise AssertionError("HTML export omitted event/timestamp provenance")
-    if len(json_data["review_candidates"]) < 3:
-        raise AssertionError("JSON export must contain the three CASE01 review candidates")
-    if not all(item.get("source_references") for item in json_data["review_candidates"]):
-        raise AssertionError("A review candidate has no source references")
+    if case_id == "CASE01" and candidates:
+        if not all(item.get("source_references") for item in json_data["review_candidates"]):
+            raise AssertionError("A CASE01 review candidate has no source references")
+    if len(json_data["rule_engine_candidates"]) != len(engine_findings):
+        raise AssertionError("JSON export omitted automated candidate findings")
     return paths
 
 
@@ -94,8 +134,14 @@ def main() -> None:
         "--candidates", type=Path,
         default=ROOT / "analysis/thi-timeline/week3_findings_validation.csv",
     )
+    parser.add_argument(
+        "--findings", type=Path, default=None,
+        help="Optional Correlation Engine findings JSON (kept separate from manual candidates)",
+    )
     args = parser.parse_args()
-    for kind, path in export_case_report(args.database, args.case_id, args.output_dir, args.candidates).items():
+    for kind, path in export_case_report(
+        args.database, args.case_id, args.output_dir, args.candidates, args.findings
+    ).items():
         print(f"{kind.upper()}: {path}")
 
 

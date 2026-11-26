@@ -16,12 +16,12 @@ The raw disk image and extracted artifact directories are absent from this check
 
 | Hypothesis | PASS requires | CASE01 result |
 |---|---|---|
-| H1 — folder navigation | A typed or recognized ShellBags interaction precedes a LNK/JumpList interaction to a child path within 10 minutes; retain both source references. | **PARTIAL**: 150 ordered pairs support the hypothesis; 44 reverse-order pairs are reported separately and do not count as support. |
-| H2 — document execution | Prefetch directly references the same document path in `files_loaded_user` and is within 10 minutes of the LNK event. App name or extension compatibility alone is insufficient. | **PASS**: 1 direct-reference pair is inside the time window; 9 direct-reference pairs are outside it. |
-| H3 — deletion lifecycle | A Recycle Bin deletion timestamp follows a recognized same-path interaction. Later interaction is reported as a temporal contradiction. | **NO_DATA**: CASE01 inventory lists three `desktop.ini` files and no `$I`/`$R` deletion records. |
-| H4 — user attribution | H3-compatible ordering and matching non-empty SIDs on both events. | **NO_DATA**: no `$I` deletion records are available. |
+| H1 - folder navigation | A semantic user-interaction ShellBags event precedes a LNK/JumpList interaction to a descendant target path within 10 minutes; target metadata and reverse parent-child paths are excluded. Both source references are retained. | **PARTIAL**: 93 ordered pairs support the hypothesis; 24 reverse-order pairs are reported separately and do not count as support. |
+| H2 - document execution | Prefetch directly references the same document path in `files_loaded_user` and is within 10 minutes of the LNK record. This is application/document association, not proof that a human opened the file. App name or extension compatibility alone is insufficient. | **PASS**: 1 direct-reference pair is inside the time window; 9 direct-reference pairs are outside it. The supported claim is limited to an application reference. |
+| H3 - deletion lifecycle | Only a Recycle Bin event explicitly typed `RecycleBin_DeletionTime` or marked with deletion semantics is treated as deletion. Later same-path interaction is a temporal anomaly requiring review, not a confirmed contradiction because the file may have been recreated. | **NO_DATA**: CASE01 inventory lists three `desktop.ini` files and no `$I`/`$R` deletion records. |
+| H4 - user attribution | Requires deletion semantics, same lifecycle ordering, matching non-empty SIDs, and shared stable file identity/lifecycle evidence. Path/time/SID alone remains review-required. | **NO_DATA**: no `$I` deletion records or file lifecycle identity are available. |
 
-Overall status is **`PARTIAL`** (H1 PARTIAL, H2 PASS, H3/H4 NO_DATA). Missing data never produces `VERIFIED`. The checks preserve event IDs and evidence references for supported pairs. H1/H2 use a 10-minute proximity window.
+Overall status is **`PARTIAL`** (H1 PARTIAL, H2 PASS, H3/H4 NO_DATA). Mixed or unspecified case identifiers are rejected by `CrossValidator` when they could mix cases. Missing data never produces `VERIFIED`. The checks preserve event IDs and evidence references for supported pairs. H1/H2 use a 10-minute proximity window.
 
 ## 3. CASE01 review candidates
 
@@ -37,34 +37,24 @@ C1/C2/C5 remain `unverified` and `review_pending_phuc`. Their observations, sour
 
 ## 4. SQLite benchmark
 
-The benchmark uses deterministic generated records marked `synthetic`, never CASE01 evidence. It measures insertion and median latency for case filter, artifact-plus-keyword query, and timeline retrieval at 692, 6,920, and 27,680 events. On the recorded Windows/Python/SQLite environment, the largest query median was **33 ms**; inserting 27,680 rows took **21.4 seconds**. See `benchmark_report.md` and `benchmark_results.json` for measurements and limitations.
+The benchmark uses deterministic generated records marked `synthetic`, never CASE01 evidence. It measures insertion and median latency for case filter, artifact-plus-keyword query, and timeline retrieval at 692, 6,920, and 27,680 events. After integrating `dev`'s SQLite changes, the largest dataset inserted in **9.315 s**; the largest query median was **20.645 ms** for case filtering, **12.270 ms** for artifact plus keyword, and **2.471 ms** for timeline retrieval. The timestamp index was checked through `EXPLAIN QUERY PLAN`. See `benchmark_report.md` and `benchmark_results.json` for configuration and limitations.
 
 ## 5. Report export
 
-`scripts/export_case_report.py` exported CSV, JSON, and HTML from the CASE01 SQLite database for all **692 events**. CSV and HTML include event IDs, timestamp types, and evidence references. JSON contains the complete event records, C1/C2/C5 with source references, and H1–H4 validation output. All candidates are labeled as requiring review.
+`scripts/export_case_report.py` exported CSV, JSON, and HTML from the CASE01 SQLite database for all **692 events**. CSV includes event ID, case ID, timestamp/type, parser, source file, evidence reference, validation status, and `extra_attributes` JSON. HTML findings show case ID, event IDs, evidence references, confidence, and validation status. A direct CASE01 engine run produced **6,192 automated candidate findings**, exported separately from the **3 manual review candidates C1/C2/C5**. These are candidates, not verified conclusions.
 
 ## 6. Reproduction and checks
 
-Rebuild the SQLite database:
+Rebuild the CASE01 SQLite database and export the reports:
 
 ```powershell
-python -m src.pipeline `
-  --input analysis/phuc-artifacts/case01_supporting_events.csv `
-  --shellbags results/case01_shellbags_events.csv `
-  --database results/case01_timeline.db `
-  --case-id CASE01 `
-  --output "$env:TEMP\case01_timeline.json" `
-  --format json
-```
-
-Export the case report and reproduce the benchmark:
-
-```powershell
-python scripts/export_case_report.py --database results/case01_timeline.db --case-id CASE01 --output-dir results/reports
+$caseRun = Join-Path $env:TEMP ("wintrace-case01-" + [guid]::NewGuid().ToString("N"))
+.\scripts\run_case01_day17.ps1 -OutputDirectory $caseRun
+python scripts/export_case_report.py --database (Join-Path $caseRun "case01_timeline.db") --case-id CASE01 --output-dir results/reports
 python scripts/benchmark_timeline.py --sizes 692,6920,27680 --repeats 7 --output docs/benchmark_results.json
 ```
 
-The full test suite completed with **119 passed** using `\.venv\Scripts\python.exe -m pytest -q` after removing the UI-only source-reference viewer test. `python -m compileall -q src scripts tests` and `git diff --check` also passed. Setup and commands are in `week3_non_ui_guide.md`.
+The merged `dev` + `quyen-week3` suite completed with **146 passed and 14 subtests passed** using `.venv\Scripts\python.exe -m pytest -q`. `compileall` and `git diff --check` passed. `check_week3_inputs.py` passed with **24 warnings** (missing raw/synthetic sources, optional Python packages, and native Plaso commands); the absent raw evidence aggregate digests were not rehashed or promoted to verified. CASE01 was re-imported as 692 unique events; repeat import inserted 0 additional rows. Setup and commands are in `week3_non_ui_guide.md`.
 
 ## 7. Limits
 

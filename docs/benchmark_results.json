@@ -12,34 +12,34 @@
     {
       "events_requested": 692,
       "events_inserted": 692,
-      "database_bytes": 512000,
-      "insert_seconds": 0.205046,
+      "database_bytes": 622592,
+      "insert_seconds": 0.207232,
       "queries_median_seconds": {
-        "case_filter": 0.002437,
-        "artifact_and_keyword": 0.002283,
-        "full_timeline": 0.002427
+        "case_filter": 0.002587,
+        "artifact_and_keyword": 0.002764,
+        "full_timeline": 0.002215
       }
     },
     {
       "events_requested": 6920,
       "events_inserted": 6920,
-      "database_bytes": 4825088,
-      "insert_seconds": 1.716492,
+      "database_bytes": 5726208,
+      "insert_seconds": 2.015709,
       "queries_median_seconds": {
-        "case_filter": 0.005949,
-        "artifact_and_keyword": 0.005457,
-        "full_timeline": 0.004309
+        "case_filter": 0.006119,
+        "artifact_and_keyword": 0.006458,
+        "full_timeline": 0.002335
       }
     },
     {
       "events_requested": 27680,
       "events_inserted": 27680,
-      "database_bytes": 19189760,
-      "insert_seconds": 21.422707,
+      "database_bytes": 22732800,
+      "insert_seconds": 9.314989,
       "queries_median_seconds": {
-        "case_filter": 0.029848,
-        "artifact_and_keyword": 0.033068,
-        "full_timeline": 0.02198
+        "case_filter": 0.020645,
+        "artifact_and_keyword": 0.01227,
+        "full_timeline": 0.002471
       }
     }
   ]

@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime
 
 import pytest
 
@@ -36,6 +37,78 @@ def test_storage_rejects_non_positive_limit(tmp_path):
     with TimelineStore(str(tmp_path / "timeline.db")) as store:
         with pytest.raises(ValueError, match="limit"):
             store.query(limit=0)
+
+
+def test_storage_normalizes_timestamps_and_filters_in_utc(tmp_path):
+    database = tmp_path / "timeline.db"
+    event = make_event(timestamp="2026-10-25T02:10:00.123456-05:00")
+    event.case_id = "CASE01"
+    event.validation_status = "verified"
+
+    with TimelineStore(str(database)) as store:
+        assert event.timestamp == "2026-10-25T07:10:00.123456+00:00"
+        assert store.insert_events([event]) == 1
+        matching, = store.query(
+            start=datetime.fromisoformat("2026-10-25T02:10:00-05:00"),
+            end=datetime.fromisoformat("2026-10-25T08:00:00+00:00"),
+            artifact="evtx",
+            path="ALICE\\report.docx",
+            validation_status="VERIFIED",
+            case_id="case01",
+        )
+        no_match = store.query(
+            start=datetime.fromisoformat("2026-10-25T08:00:00+00:00")
+        )
+        naive_bound = store.query(
+            start=datetime(2026, 10, 25, 7, 10, 0, 123456),
+            end=datetime(2026, 10, 25, 7, 10, 0, 123456),
+        )
+
+    assert matching.timestamp == "2026-10-25T07:10:00.123456+00:00"
+    assert matching.evidence_reference == "Security.evtx:1"
+    assert no_match == []
+    assert len(naive_bound) == 1
+
+
+def test_storage_query_escapes_like_wildcards_and_rejects_reversed_range(tmp_path):
+    event = make_event()
+    event.target_path = r"C:\Users\Alice\report_100%.docx"
+    with TimelineStore(str(tmp_path / "timeline.db")) as store:
+        store.insert_events([event])
+        assert len(store.query(path="report_100%")) == 1
+        assert store.query(path="reportX1000") == []
+        with pytest.raises(ValueError, match="start"):
+            store.query(
+                start=datetime.fromisoformat("2026-10-26T00:00:00+00:00"),
+                end=datetime.fromisoformat("2026-10-25T00:00:00+00:00"),
+            )
+
+
+def test_storage_migrates_offset_timestamp_and_its_fingerprint(tmp_path):
+    database = tmp_path / "timeline.db"
+    stored_offset = "2026-10-25T02:10:00-05:00"
+    event = make_event(timestamp=stored_offset)
+    with TimelineStore(str(database)) as store:
+        assert store.insert_events([event]) == 1
+        previous_fingerprint = TimelineStore._fingerprint_for(
+            event, stored_offset, include_identity=True
+        )
+        store.connection.execute(
+            "UPDATE events SET timestamp = ?, fingerprint = ?",
+            (stored_offset, previous_fingerprint),
+        )
+
+    with TimelineStore(str(database)) as store:
+        row = store.connection.execute(
+            "SELECT timestamp, fingerprint FROM events"
+        ).fetchone()
+        restored, = store.query(
+            start=datetime.fromisoformat("2026-10-25T07:10:00+00:00")
+        )
+        assert row["timestamp"] == "2026-10-25T07:10:00+00:00"
+        assert row["fingerprint"] == store.fingerprint(restored)
+        assert store.insert_events([event]) == 0
+        assert store.count() == 1
 
 
 def test_storage_migrates_legacy_fingerprint_on_reimport(tmp_path):
@@ -216,6 +289,8 @@ def test_storage_migrates_legacy_database_and_recovers_provenance_on_reimport(tm
                 connection.execute("DROP INDEX idx_events_validation")
             if "case_id" in legacy_columns:
                 connection.execute("DROP INDEX idx_events_case")
+                connection.execute("DROP INDEX idx_events_case_nocase")
+                connection.execute("DROP INDEX idx_events_case_artifact_timestamp")
             for column in legacy_columns:
                 connection.execute(f"ALTER TABLE events DROP COLUMN {column}")
     finally:

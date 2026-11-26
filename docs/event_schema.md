@@ -24,7 +24,7 @@ Mỗi sự kiện (Event) trong WinTrace được định nghĩa bằng cấu tr
 | `timestamp_type` | `String` | Không | **MỚI** | Mã định danh kỹ thuật chuẩn hóa của loại timestamp, dùng cho Correlation Engine xác định độ chính xác (FAT ±2s vs NTFS/Prefetch ms) | `"ShellItem_FolderModified"`, `"Prefetch_LastRun"` |
 | `artifact_source` | `String` | Có | Mở rộng | Tên nguồn artifact pháp chứng tạo ra sự kiện (thuộc `VALID_ARTIFACTS`) | `"ShellBags"`, `"Prefetch"`, `"LNK"`, `"JumpLists"`, `"RecycleBin"`, `"EVTX"`, `"NTFS_MFT"`, `"Registry"` |
 | `source_file` | `String` | Có | | File bằng chứng gốc được trích xuất (tên hive hoặc file) | `"UsrClass.dat"`, `"WINWORD.EXE-5C48A1B2.pf"` |
-| `target_path` | `String` | Có | | Đường dẫn đối tượng (file, thư mục, executable) mà sự kiện tác động tới | `"Desktop\\This PC\\E:\\Secret Project Data"`, `"C:\\Program Files\\WINWORD.EXE"` |
+| `target_path` | `String` | Có | | Đường dẫn đối tượng (file, thư mục, executable) mà sự kiện tác động tới; separator được chuẩn hóa nhưng không resolve drive-relative path hay `..` | `"Desktop\\This PC\\E:\\Secret Project Data"`, `"C:\\Program Files\\WINWORD.EXE"` |
 | `evidence_reference` | `String` | Không | **MỚI** | Chuỗi tham chiếu truy vết ngược lại bằng chứng gốc (file dòng, offset, hive, slot, tool trích xuất) | `"Deduplicated.csv:L59 \| hive=UsrClass.dat \| BagPath=BagMRU\\1\\0 \| verified: ShellBags Explorer"` |
 | `message` | `String` | Có | | Mô tả ngắn gọn, dễ đọc về hành vi/nội dung sự kiện | `"User navigated to folder Project via Windows Explorer"` |
 | `data_type` | `String` | Có | | Định danh loại parser của Plaso hoặc WinTrace | `"windows:registry:bagmru"`, `"windows:prefetch:execution"` |
@@ -34,7 +34,7 @@ Mỗi sự kiện (Event) trong WinTrace được định nghĩa bằng cấu tr
 | `confidence_level` | `String` | Có | | Mức độ tin cậy của bằng chứng: `HIGH`, `MEDIUM`, `LOW` | `"HIGH"` |
 | `validation_status` | `String` | Không | **MỚI** | Trạng thái kiểm chứng: `verified`, `unverified`, `synthetic`, `disputed` | `"verified"` |
 | `case_id` | `String` | Không | **MỚI** | Mã vụ án / bộ dữ liệu nhằm tách biệt bằng chứng thật và dữ liệu thử | `"CASE01"`, `"SCENARIO_TEST"` |
-| `extra_attributes` | `Object` | Không | | Các trường metadata chi tiết bổ trợ tùy theo từng loại artifact | `{"mru_order": 1, "node_slot": 14}` |
+| `extra_attributes` | `Object` | Không | | Metadata bổ trợ theo artifact; `raw_path` giữ nguyên literal đầu vào trước chuẩn hóa, không thay thế `target_path` | `{"mru_order": 1, "node_slot": 14, "raw_path": "E:/Evidence//file.raw"}` |
 
 ---
 

@@ -41,6 +41,20 @@ def normalize_case_id(case_id: Optional[str]) -> Optional[str]:
     return normalized or None
 
 
+def validate_unique_event_ids(events: List[ForensicEvent]) -> None:
+    """Reject duplicate event IDs within the same normalized case."""
+    seen_event_ids = set()
+    for event in events:
+        case_id = normalize_case_id(event.case_id)
+        identity = (case_id, event.event_id)
+        if identity in seen_event_ids:
+            case_label = case_id if case_id is not None else "Unspecified"
+            raise ValueError(
+                f"Duplicate event_id {event.event_id!r} in case {case_label!r}"
+            )
+        seen_event_ids.add(identity)
+
+
 def _is_bagmru_path(path: str) -> bool:
     """Check if a path looks like a BagMRU absolute path (starts with Desktop\\)."""
     if not path:
@@ -247,16 +261,7 @@ class CorrelationEngine:
 
     def correlate(self, events: List[ForensicEvent]) -> List[CorrelationFinding]:
         findings: List[CorrelationFinding] = []
-        seen_event_ids = set()
-        for event in events:
-            case_id = normalize_case_id(event.case_id)
-            identity = (case_id, event.event_id)
-            if identity in seen_event_ids:
-                case_label = case_id if case_id is not None else "Unspecified"
-                raise ValueError(
-                    f"Duplicate event_id {event.event_id!r} in case {case_label!r}"
-                )
-            seen_event_ids.add(identity)
+        validate_unique_event_ids(events)
 
         # Sort events chronologically
         sorted_events = sorted(events, key=lambda e: e.dt)
