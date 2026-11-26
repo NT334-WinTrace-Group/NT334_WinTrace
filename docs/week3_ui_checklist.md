@@ -23,7 +23,7 @@ Kiểm kê ban đầu theo `src/app.py` tại `dev` `8053b34`; đã cập nhật
 - [x] P0: findings mặc định là Alice; chặn trộn với CASE01
 - [x] P0: nhãn Candidate / Validated / Unresolved lấy từ dữ liệu
 - [x] P0: mở được event nguồn kể cả khi nằm ngoài filter timeline
-- [x] P1: lọc rule, status; phân trang (6.192 finding); hiện path và `investigation_note`
+- [x] P1: lọc rule, status; phân trang (hàng nghìn finding); hiện path và `investigation_note`
 - [x] P1: 3 candidate kiểm tra:
   - [x] C1: `CASE01-SB0133` + `CASE01-JL0022`
   - [x] C2: `CASE01-SB0147` + `CASE01-JL0020`

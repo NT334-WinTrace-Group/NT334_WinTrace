@@ -7,11 +7,11 @@ Môi trường (2026-11-26): Windows 11, Python 3.12.6. Clone mới của nhánh
 | Kiểm tra | Cách kiểm | Kết quả |
 |---|---|---|
 | Test suite trên venv sạch | `python -m pytest -q` | 246 passed, 14 subtests |
-| Pipeline CASE01 theo README | CLI | 692 event, 6.192 candidate |
+| Pipeline CASE01 theo README | CLI | 692 event, 6.192 candidate (xem "Số candidate" trong `week3_day21_ui_release.md`) |
 | Mở UI với đường dẫn mặc định | Trình duyệt, venv sạch | Đạt, không lỗi console |
 | Lọc `CASE01-SB0133` | Trình duyệt + test | 1 event |
 | Xem evidence | Test | Reference và `Deduplicated.csv:L106` hiện đủ |
-| Chuẩn bị export | Trình duyệt + test | 1 event đã lọc, 6.192 finding |
+| Chuẩn bị export | Trình duyệt + test | 1 event đã lọc, mọi finding của engine |
 | Nội dung CSV/JSON | Test roundtrip | Khớp |
 | Bấm tải file và mở bằng Excel | **Chưa kiểm**, cần làm tay | – |
 | 3 candidate C1, C2, C5 | Test | Mở được, truy ra đúng event nguồn |

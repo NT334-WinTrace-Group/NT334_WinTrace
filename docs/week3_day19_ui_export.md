@@ -30,4 +30,4 @@ UTF-8 có BOM. Text bắt đầu bằng `=`, `+`, `-`, `@` hoặc `'` được t
 
 ## Kết quả CASE01
 
-692 event và 6.192 finding không có lỗi; roundtrip CSV/JSON khớp. Đã chuẩn bị export trên trình duyệt; nội dung file được kiểm qua code, chưa bấm tải từng file.
+692 event và toàn bộ finding (6.192 tại `0f276d8`) không có lỗi; roundtrip CSV/JSON khớp. Đã chuẩn bị export trên trình duyệt; nội dung file được kiểm qua code, chưa bấm tải từng file.

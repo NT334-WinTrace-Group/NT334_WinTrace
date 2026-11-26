@@ -39,13 +39,32 @@ Module dùng chung bị sửa: `src/storage.py` (giữ thứ tự tham số `que
 - Phiên UI đầy đủ không đổi byte nào của DB và findings JSON.
 - DB cũ thiếu cột: UI từ chối và không sửa; mở bằng `TimelineStore` để migrate rồi dùng được.
 - Pipeline không ghi đè CSV input, kể cả qua hard link.
-- Chạy trên dữ liệu CASE01 tại commit `0f276d8`: 692 event, 6.192 candidate.
+- Chạy trên dữ liệu CASE01: 692 event; số candidate xem mục "Số candidate" bên dưới.
+
+## Số candidate
+
+Số finding do `CorrelationEngine` sinh ra phụ thuộc vào code engine, input và `--correlation-window`; UI chỉ hiển thị và không đổi số này. Đo trên Windows, Python 3.12.6, cửa sổ mặc định 5 phút:
+
+| Commit | `case01_supporting_events.csv` SHA-256 | `case01_shellbags_events.csv` SHA-256 | Event | Candidate |
+|---|---|---|---:|---:|
+| `0f276d8`, `dd74654` | `342164f1…a90e207e` | `14f50ebe…64f850a8`* | 692 | 6.192 |
+
+\* Hash của byte trong working tree; manifest ghi hash sau chuẩn hóa LF.
+
+Review PR 20 báo 6.198 candidate. Con số này chưa tái lập được: cùng commit và input như trên vẫn cho 6.192; không nhánh nào trên remote chứa 6.198; đổi cửa sổ sang 5,1 / 5,25 / 6 phút cho 6.192 / 6.192 / 6.196. Trước khi chốt một con số trong báo cáo cuối, chạy lệnh sau trên đúng commit sẽ merge và ghi kết quả cùng commit:
+
+```powershell
+git rev-parse --short HEAD
+Get-FileHash analysis\phuc-artifacts\case01_supporting_events.csv, results\case01_shellbags_events.csv
+python src\pipeline.py --input analysis\phuc-artifacts\case01_supporting_events.csv --shellbags results\case01_shellbags_events.csv --case-id CASE01 --source-label case01-supporting-tools --output-dir results --output normalized.json --database timeline.db --findings findings.json
+(Get-Content results\CASE01\findings.json -Raw | ConvertFrom-Json).Count
+```
 
 ## Giới hạn đã biết
 
 1. UI đọc output có sẵn; **không có trang import evidence** và không chạy Plaso. Plaso chưa chạy trên CASE01.
 2. CASE01 chưa có EVTX, Recycle Bin, MFT nên không minh họa được xóa file.
-3. 6.192 finding đều là Candidate; phần lớn không phải hành vi người dùng. Điểm HIGH không có nghĩa là đã kiểm chứng.
+3. Mọi finding của engine đều là Candidate; phần lớn không phải hành vi người dùng. Điểm HIGH không có nghĩa là đã kiểm chứng.
 4. Kết quả duyệt C1/C2/C5 nằm ở CSV riêng, chưa được ghi vào finding.
 5. Filter path chỉ tìm `target_path`; không quy đổi alias ổ đĩa (ví dụ `V:`). Keyword tiếng Việt có dấu phân biệt hoa thường.
 6. Status hoặc confidence lạ trong DB bị `ForensicEvent` đổi thành `unverified` / `MEDIUM`; UI chỉ cảnh báo status.
