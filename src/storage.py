@@ -375,10 +375,10 @@ class TimelineStore:
         end_utc = self._utc_bound(end, "end")
         if start_utc and end_utc and start_utc > end_utc:
             raise ValueError("start must not be later than end")
-        if start:
+        if start_utc is not None:
             clauses.append("timestamp >= ?")
             parameters.append(start_utc)
-        if end:
+        if end_utc is not None:
             clauses.append("timestamp <= ?")
             parameters.append(end_utc)
         if artifact:
@@ -439,7 +439,7 @@ class TimelineStore:
         if limit is not None and limit < 1:
             raise ValueError("limit must be positive")
         if offset < 0:
-            raise ValueError("offset must not be negative")
+            raise ValueError("offset must be non-negative")
         sql = "SELECT * FROM events" + where + " ORDER BY timestamp, id"
         if limit is not None or offset:
             sql += " LIMIT ? OFFSET ?"
@@ -530,6 +530,14 @@ class TimelineStore:
 
     def count(self) -> int:
         return int(self.connection.execute("SELECT COUNT(*) FROM events").fetchone()[0])
+
+    def case_ids(self) -> List[str]:
+        """Return distinct, non-empty case identifiers for UI scoping."""
+        rows = self.connection.execute(
+            "SELECT DISTINCT case_id FROM events "
+            "WHERE case_id IS NOT NULL AND trim(case_id) != '' ORDER BY case_id COLLATE NOCASE"
+        ).fetchall()
+        return [str(row[0]) for row in rows]
 
     def close(self) -> None:
         self.connection.close()

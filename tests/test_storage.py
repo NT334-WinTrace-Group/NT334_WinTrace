@@ -196,6 +196,22 @@ def test_storage_keeps_same_payload_separate_when_cases_differ(tmp_path):
         assert store.count() == 2
 
 
+def test_storage_case_filter_and_offset_are_stable(tmp_path):
+    database = tmp_path / "timeline.db"
+    events = []
+    for index, case_id in enumerate(("CASE01", "CASE01", "CASE02")):
+        event = make_event(f"E{index}", f"2026-10-25T02:0{index}:00+00:00")
+        event.case_id = case_id
+        events.append(event)
+    with TimelineStore(str(database)) as store:
+        store.insert_events(events)
+        assert store.case_ids() == ["CASE01", "CASE02"]
+        first, = store.query(case_id="case01", limit=1)
+        second, = store.query(case_id="CASE01", limit=1, offset=1)
+    assert first.event_id == "E0"
+    assert second.event_id == "E1"
+
+
 def test_storage_exposes_schema_v2_columns(tmp_path):
     database = tmp_path / "timeline.db"
     event = ForensicEvent(

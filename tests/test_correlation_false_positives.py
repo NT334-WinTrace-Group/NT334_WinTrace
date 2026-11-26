@@ -1,11 +1,10 @@
 """WinTrace Week 3: focused forensic negative tests for correlation rules.
 
-Run on PR #10 (week2) worktree from repository root:
+Run from the repository root:
     python -m pytest tests/test_correlation_false_positives.py -v
 
-The first three tests are intentionally *regression specifications*: they may
-FAIL on the current engine. Do not weaken the assertions just to get green.
-They express desired forensic-safe behavior, which needs team agreement.
+These regression tests express forensic-safe behavior for path, corroboration,
+and deletion semantics.
 """
 
 from src.correlation import CorrelationEngine, path_relation

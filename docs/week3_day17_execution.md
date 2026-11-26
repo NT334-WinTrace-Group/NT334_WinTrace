@@ -69,7 +69,13 @@ Input SHA-256:
 | Input | SHA-256 |
 |---|---|
 | `analysis/phuc-artifacts/case01_supporting_events.csv` | `342164f1a0e9799a8f57c86277ded9d8014e8b30028d58a119a878d7a90e207e` |
-| `results/case01_shellbags_events.csv` | `14f50ebe794b3cd51142bd1319a2767dd208d63a973bbc17da51cfb564f850a8` |
+| `results/case01_shellbags_events.csv` (working-tree bytes) | `14f50ebe794b3cd51142bd1319a2767dd208d63a973bbc17da51cfb564f850a8` |
+
+The evidence manifest records the same derived CSV under the explicit
+`normalized_lf_file_sha256` scope: converting CRLF/CR line endings to LF gives
+`d7fa967fca451a9d6fcebc42f057dffa2f4712c52969711bb5bd834c3e6f9dd5`. The
+working-tree digest above is over the original bytes. These hashes therefore
+describe different, documented byte scopes rather than a mismatch.
 
 The supporting-event builder was rerun from committed `tool_output` files:
 309 rows (`LNK` 69, `JumpLists` 31, `Prefetch` 190, `Registry` 19), with
@@ -137,9 +143,8 @@ counts match the table above. The repeated import left the row count at 692.
 
 ## Integrity caveat
 
-The current manifest entry for `results/case01_shellbags_events.csv` is stale:
-it records 212,716 bytes and the empty-file SHA-256, while the actual input
-used here is 575,015 bytes with the SHA-256 recorded above. The preflight
-checker also reports missing raw CASE01 sources and mismatches for synthetic
-fixtures. These manifest entries were not silently rewritten; the artifact
-owners should confirm corrected integrity metadata.
+The manifest records the derived ShellBags CSV as 575,015 bytes and its
+normalized-LF digest. Raw CASE01 sources are absent from this checkout, so
+their inventory and aggregate digests cannot be independently rehashed here.
+The preflight checker reports that limitation as a warning; it does not mark
+those sources verified.

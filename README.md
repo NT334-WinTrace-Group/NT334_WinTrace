@@ -70,3 +70,5 @@ the CASE01 disk image. See [the Day 17 execution report](./docs/week3_day17_exec
 for the input checksums and runtime limitations, [the Day 18 data API
 contract](./docs/week3_day18_data_api.md), [the Day 19 error contract](./docs/week3_day19_error_contract.md),
 and [the Day 20-21 validation record](./docs/week3_day20_21_validation.md).
+## Week 3 non-UI verification
+See [the reproducible guide](docs/week3_non_ui_guide.md) for CASE01 validation, report export, SQLite benchmark, and test commands.

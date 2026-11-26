@@ -62,9 +62,8 @@ Phát hiện khi đối chiếu code, **không sửa trong nhánh UI**:
 |---|---|
 | Thi | Cả 519 finding HIGH là R01+R02+R03, nhiều cặp dùng metadata/KeyLastWrite; 8 finding R04 chỉ MEDIUM |
 | Thi | `correlate()` ghép mọi cặp event, O(n²): khoảng 18 giây với 692 event |
-| Quyên | `CrossValidator` trả `VERIFIED` cho CASE01 dù H1 có 791/1.615 cặp sai thứ tự và H2 có 19/20 cặp lệch hơn 10 phút |
-| Quyên | `validation_report.md` ghi H1 "luôn" đúng và có EVTX 4663; CASE01 không có EVTX |
-| Phúc, Quyên | `evidence_manifest.csv` còn hash cũ (theo tài liệu Ngày 17, chưa kiểm lại) |
+
+Các vấn đề về `CrossValidator`, `validation_report.md` và hash manifest đã được PR 19 xử lý.
 
 Cần duyệt trước khi merge:
 
