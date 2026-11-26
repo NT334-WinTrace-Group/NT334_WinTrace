@@ -62,6 +62,13 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _sha256_for_scope(path: Path, hash_scope: str) -> str:
+    if hash_scope == "normalized_lf_file_sha256":
+        data = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        return hashlib.sha256(data).hexdigest()
+    return _sha256(path)
+
+
 def _read_manifest() -> Tuple[List[Dict[str, str]], List[str]]:
     errors: List[str] = []
     if not MANIFEST_PATH.is_file():
@@ -101,7 +108,11 @@ def _check_manifest_rows(rows: List[Dict[str, str]]) -> Tuple[List[str], List[st
             errors.append(f"{item_id}: source path escapes repository root ({relative_path})")
             continue
         if not path.exists():
-            message = f"{item_id}: source is missing ({relative_path})"
+            scope = (row.get("hash_scope") or "unspecified hash scope").strip()
+            message = (
+                f"{item_id}: source is missing ({relative_path}); "
+                f"cannot locally rehash scope {scope}"
+            )
             if item_id == EXPECTED_SHELLBAGS_ITEM_ID:
                 errors.append(message)
             else:
@@ -116,7 +127,8 @@ def _check_manifest_rows(rows: List[Dict[str, str]]) -> Tuple[List[str], List[st
 
         if path.is_file():
             actual_size = path.stat().st_size
-            actual_hash = _sha256(path)
+            hash_scope = (row.get("hash_scope") or "single_file_sha256").strip()
+            actual_hash = _sha256_for_scope(path, hash_scope)
             expected_hash = (row.get("sha256") or "").strip().lower()
             if expected_size and actual_size != expected_size:
                 errors.append(

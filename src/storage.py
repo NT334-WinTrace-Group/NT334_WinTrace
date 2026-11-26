@@ -332,6 +332,7 @@ class TimelineStore:
         keyword: Optional[str] = None,
         case_id: Optional[str] = None,
         limit: Optional[int] = None,
+        offset: int = 0,
         path: Optional[str] = None,
         validation_status: Optional[str] = None,
     ) -> List[ForensicEvent]:
@@ -341,10 +342,10 @@ class TimelineStore:
         end_utc = self._utc_bound(end, "end")
         if start_utc and end_utc and start_utc > end_utc:
             raise ValueError("start must not be later than end")
-        if start:
+        if start_utc is not None:
             clauses.append("timestamp >= ?")
             parameters.append(start_utc)
-        if end:
+        if end_utc is not None:
             clauses.append("timestamp <= ?")
             parameters.append(end_utc)
         if artifact:
@@ -378,6 +379,13 @@ class TimelineStore:
                 raise ValueError("limit must be positive")
             sql += " LIMIT ?"
             parameters.append(limit)
+        if offset < 0:
+            raise ValueError("offset must be non-negative")
+        if offset:
+            if limit is None:
+                sql += " LIMIT -1"
+            sql += " OFFSET ?"
+            parameters.append(offset)
         return [self._row_to_event(row) for row in self.connection.execute(sql, parameters)]
 
     @staticmethod
@@ -406,6 +414,14 @@ class TimelineStore:
 
     def count(self) -> int:
         return int(self.connection.execute("SELECT COUNT(*) FROM events").fetchone()[0])
+
+    def case_ids(self) -> List[str]:
+        """Return distinct, non-empty case identifiers for UI scoping."""
+        rows = self.connection.execute(
+            "SELECT DISTINCT case_id FROM events "
+            "WHERE case_id IS NOT NULL AND trim(case_id) != '' ORDER BY case_id COLLATE NOCASE"
+        ).fetchall()
+        return [str(row[0]) for row in rows]
 
     def close(self) -> None:
         self.connection.close()
