@@ -1,61 +1,74 @@
-# Validation Report – Tuần 2 – CASE01
+# Week 3 Validation Report — CASE01
 
-**Dự án:** WinTrace – Automated Windows Forensic Artifact Extraction & Super Timeline Analysis
-**Người thực hiện:** Quyên – Validation & Visualization Engineer
-**Ngày:** 2026-11-08
-**Trạng thái:** Hoàn thành tuần 2 (Tích hợp UI, Report Export và Cross-Validation)
+**Owner:** Quyên — validation and reporting
+**Scope:** Evidence manifest, H1–H4 validation, SQLite benchmark, and case report export
+**Status:** Non-UI work is implemented and tested. CASE01 findings remain review candidates, not verified conclusions.
 
-> **Các trạng thái kiểm chứng (Validation Status) dùng trong báo cáo:**
-> - **Verified** – Khớp với Ground Truth (đáp án NIST) hoặc được đối chiếu chéo thành công qua các nguồn artifact độc lập.
-> - **Unverified** – Dữ liệu trích xuất tự động bằng Plaso/WinTrace, chưa có bằng chứng đối soát.
-> - **Disputed** – Xuất hiện mâu thuẫn thời gian (Temporal Anomaly) hoặc xung đột logic.
-> - **Synthetic** – Dữ liệu mô phỏng kịch bản (Scenario Alpha), không dùng làm chứng cứ.
+## 1. Evidence and dataset scope
 
-> Quy ước giờ: mọi timestamp ở **UTC** (hậu tố Z hoặc +00:00). Giờ máy nghi phạm = UTC − 4h (EDT).
+The CASE01 timeline combines **383 ShellBags events** from `results/case01_shellbags_events.csv` and **309 supporting events** from `analysis/phuc-artifacts/case01_supporting_events.csv`, for **692 events**. Supporting events include LNK, JumpLists, Prefetch, and Registry records. These are derived outputs, not raw evidence, so the manifest marks the normalized timelines `REGENERABLE`.
 
----
+The supplied inventory has a different size/hash for `case01_supporting_events.csv` than the current checkout. The manifest records the measured current file (**324,691 bytes**, SHA-256 **`342164f1a0e9799a8f57c86277ded9d8014e8b30028d58a119a878d7a90e207e`**) and retains the discrepancy in `source_note`.
 
-## 1. Mục tiêu và Phạm vi kiểm chứng
+The raw disk image and extracted artifact directories are absent from this checkout. Inventory hashes for multi-file groups are labeled as manifest digests, not single-file hashes. The disk image exact size and acquisition date remain blank because available repository sources do not establish them. Synthetic Alice fixture rows have no SHA-256 and are not marked `VERIFIED`.
 
-Báo cáo này đánh giá tính toàn vẹn của **Super Timeline** và độ tin cậy của **Correlation Findings** do module của Thi sinh ra trong Tuần 2.
-- **Dataset:** NIST CFReDS – Data Leakage Case (CASE01) và kịch bản Ground Truth mô phỏng (Scenario Alpha).
-- **Công cụ kiểm chứng:** Module `cross_validation.py` (tự động) và bộ Unit Tests (`test_validation.py`).
-- **Phạm vi:** Kiểm tra các giả thuyết H1 (Navigation), H2 (Execution), và H3/H4 (Deletion Lifecycle).
+## 2. H1–H4 validation
 
-## 2. Kết quả đối soát chéo (Cross-Validation Results)
-
-Dựa trên thiết kế tại `validation_design.md`, module Validation đã chạy kiểm thử trên toàn bộ tập sự kiện đã chuẩn hóa. Kết quả tổng thể: **VERIFIED (Không phát hiện mâu thuẫn logic)**.
-
-### 2.1. Giả thuyết H1: User Navigation (Điều hướng thư mục trước khi mở file)
-- **Cơ chế:** Đối chiếu thời gian duyệt thư mục từ `ShellBags` với thời gian truy cập file đích từ `LNK` / `Prefetch`.
-- **Kết quả:** `PASS`. 
-- **Chi tiết:** Các sự kiện điều hướng (ShellBags MRU) luôn xảy ra *trước* hoặc *cùng lúc* (time delta $\ge$ 0) với sự kiện tương tác file bên trong thư mục đó. Không có trường hợp file bị tác động trước khi thư mục chứa nó được hệ thống ghi nhận.
-
-### 2.2. Giả thuyết H2: Document Execution (Thực thi tài liệu)
-- **Cơ chế:** Đối chiếu file `LNK` (Shortcut) với tiến trình thực thi tương ứng trong `Prefetch` (vd: `.docx` đi kèm `WINWORD.EXE`).
-- **Kết quả:** `PASS`.
-- **Chi tiết:** Các tài liệu văn phòng khi được mở qua Shell (sinh ra LNK) đều có sự kiện Prefetch của ứng dụng tương ứng chạy trong khoảng thời gian rất sát ($\le 10$ phút). Sự tương quan này củng cố mạnh mẽ độ tin cậy (Confidence Level: HIGH) cho các finding liên quan đến việc mở tài liệu mật.
-
-### 2.3. Giả thuyết H3 & H4: File Deletion Lifecycle (Chu kỳ xóa file)
-- **Cơ chế:** Kiểm tra tính hợp lý của dòng thời gian trước khi file bị đưa vào `Recycle Bin` ($I Metadata).
-- **Kết quả:** `PASS` (0 Contradictions).
-- **Chi tiết:** Không phát hiện bất kỳ sự kiện nào có timestamp truy cập/sửa đổi file lại diễn ra *sau* thời điểm file đó đã bị xóa vào thùng rác. Sự kiện EVTX 4663 (Access Mask: `DELETE`) luôn đi trước timestamp của file `$I`.
-
-## 3. Thống kê Giao diện và Báo cáo (UI & Report Export)
-
-Module giao diện (Streamlit) và xuất báo cáo đã được hoàn thiện và tích hợp thành công với SQLite Database (`storage.py`).
-
-| Tính năng | Trạng thái | Đánh giá / Ghi chú |
+| Hypothesis | PASS requires | CASE01 result |
 |---|---|---|
-| **Timeline Database Connection** | Hoạt động | Đọc thành công `schema_version v2`, hiển thị đầy đủ `timestamp_type` và `evidence_reference`. |
-| **Targeted Filtering** | Hoạt động | Lọc chính xác theo Artifact Type, Keyword và Time Range. Không bị crash khi query null. |
-| **Evidence Detail Viewer** | Hoạt động | Parse thành công `extra_attributes` (JSON), giữ nguyên chuỗi Chain of Custody để điều tra viên truy vết. |
-| **Correlation Findings Viewer** | Hoạt động | Map chính xác Finding ID với cặp sự kiện (Event A, Event B) và hiển thị các rule đã khớp (R01-R05). |
-| **HTML/CSV Report Export** | Hoạt động | Định dạng báo cáo rõ ràng, highlight các finding có `Confidence: HIGH`. Dữ liệu xuất ra giữ nguyên Provenance. |
+| H1 — folder navigation | A typed or recognized ShellBags interaction precedes a LNK/JumpList interaction to a child path within 10 minutes; retain both source references. | **PARTIAL**: 150 ordered pairs support the hypothesis; 44 reverse-order pairs are reported separately and do not count as support. |
+| H2 — document execution | Prefetch directly references the same document path in `files_loaded_user` and is within 10 minutes of the LNK event. App name or extension compatibility alone is insufficient. | **PASS**: 1 direct-reference pair is inside the time window; 9 direct-reference pairs are outside it. |
+| H3 — deletion lifecycle | A Recycle Bin deletion timestamp follows a recognized same-path interaction. Later interaction is reported as a temporal contradiction. | **NO_DATA**: CASE01 inventory lists three `desktop.ini` files and no `$I`/`$R` deletion records. |
+| H4 — user attribution | H3-compatible ordering and matching non-empty SIDs on both events. | **NO_DATA**: no `$I` deletion records are available. |
 
-## 4. Hạn chế và Ghi chú điều tra (Investigation Notes)
-- **Độ phân giải thời gian (Timestamp Precision):** Báo cáo ghi nhận một số sự kiện từ `ShellBags` (FAT time) có độ lệch $\pm 2$ giây. Hệ thống Correlation đã tự động điều chỉnh time window để bù trừ, UI đã hiển thị cảnh báo loại timestamp (ví dụ: `ShellItem_FolderModified`) để điều tra viên lưu ý khi phân tích sâu.
-- **Dữ liệu Unverified:** Các candidate finding có điểm số ở mức MEDIUM vẫn cần điều tra viên kiểm chứng thủ công (verify) trước khi đưa ra kết luận cuối cùng.
+Overall status is **`PARTIAL`** (H1 PARTIAL, H2 PASS, H3/H4 NO_DATA). Missing data never produces `VERIFIED`. The checks preserve event IDs and evidence references for supported pairs. H1/H2 use a 10-minute proximity window.
 
-## 5. Kết luận
-Phân hệ Validation và Visualization (v2) đã hoàn thành xuất sắc các mục tiêu của Tuần 2. Giao diện ổn định, sẵn sàng cho việc tải các dataset lớn hơn và phục vụ kịch bản diễn tập (Demo) cho Tuần 3.
+## 3. CASE01 review candidates
+
+The repository records three source-backed candidates in `analysis/thi-timeline/week3_findings_validation.csv`:
+
+| Candidate | Supported observation | Limit |
+|---|---|---|
+| C1 | ShellBags navigation precedes Excel JumpList/LNK records associated with a network-share document. | Does not establish copying or exfiltration; ShellBags twins are not independent sources. |
+| C2 | Time-scoped `V:` mapping resolves to the secured-drive UNC share during the relevant interval. | Does not establish copying or exfiltration; a reused drive letter does not identify a unique device. |
+| C5 | WINWORD Prefetch `FilesLoaded`, LNK, and JumpList contain matching resignation DOCX context. | Does not establish human intent or that a browser opened the document. |
+
+C1/C2/C5 remain `unverified` and `review_pending_phuc`. Their observations, source references, caveats, and claims not established are retained in the candidate CSV and report export. A source reference is traceability information; it is not itself independent verification.
+
+## 4. SQLite benchmark
+
+The benchmark uses deterministic generated records marked `synthetic`, never CASE01 evidence. It measures insertion and median latency for case filter, artifact-plus-keyword query, and timeline retrieval at 692, 6,920, and 27,680 events. On the recorded Windows/Python/SQLite environment, the largest query median was **33 ms**; inserting 27,680 rows took **21.4 seconds**. See `benchmark_report.md` and `benchmark_results.json` for measurements and limitations.
+
+## 5. Report export
+
+`scripts/export_case_report.py` exported CSV, JSON, and HTML from the CASE01 SQLite database for all **692 events**. CSV and HTML include event IDs, timestamp types, and evidence references. JSON contains the complete event records, C1/C2/C5 with source references, and H1–H4 validation output. All candidates are labeled as requiring review.
+
+## 6. Reproduction and checks
+
+Rebuild the SQLite database:
+
+```powershell
+python -m src.pipeline `
+  --input analysis/phuc-artifacts/case01_supporting_events.csv `
+  --shellbags results/case01_shellbags_events.csv `
+  --database results/case01_timeline.db `
+  --case-id CASE01 `
+  --output "$env:TEMP\case01_timeline.json" `
+  --format json
+```
+
+Export the case report and reproduce the benchmark:
+
+```powershell
+python scripts/export_case_report.py --database results/case01_timeline.db --case-id CASE01 --output-dir results/reports
+python scripts/benchmark_timeline.py --sizes 692,6920,27680 --repeats 7 --output docs/benchmark_results.json
+```
+
+The full test suite completed with **119 passed** using `\.venv\Scripts\python.exe -m pytest -q` after removing the UI-only source-reference viewer test. `python -m compileall -q src scripts tests` and `git diff --check` also passed. Setup and commands are in `week3_non_ui_guide.md`.
+
+## 7. Limits
+
+- The three review candidates do not prove copying, exfiltration, intent, or a specific person's action.
+- Prefetch is machine-level evidence and does not identify an interactive user by itself.
+- H3/H4 cannot be evaluated against deletion metadata because CASE01 inventory has no `$I`/`$R` files.
+- `SOURCE_INVENTORY_RECORDED` means values were transcribed from the supplied inventory; absent raw files were not rehashed in this checkout.

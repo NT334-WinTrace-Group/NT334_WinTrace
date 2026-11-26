@@ -299,14 +299,15 @@ class TimelineStore:
         keyword: Optional[str] = None,
         case_id: Optional[str] = None,
         limit: Optional[int] = None,
+        offset: int = 0,
     ) -> List[ForensicEvent]:
         clauses: List[str] = []
         parameters: List[Any] = []
         if start:
-            clauses.append("timestamp >= ?")
+            clauses.append("julianday(timestamp) >= julianday(?)")
             parameters.append(start.isoformat())
         if end:
-            clauses.append("timestamp <= ?")
+            clauses.append("julianday(timestamp) <= julianday(?)")
             parameters.append(end.isoformat())
         if artifact:
             clauses.append("lower(artifact_source) = lower(?)")
@@ -321,12 +322,19 @@ class TimelineStore:
         sql = "SELECT * FROM events"
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        sql += " ORDER BY timestamp, id"
+        sql += " ORDER BY julianday(timestamp), id"
         if limit is not None:
             if limit < 1:
                 raise ValueError("limit must be positive")
             sql += " LIMIT ?"
             parameters.append(limit)
+        if offset < 0:
+            raise ValueError("offset must be non-negative")
+        if offset:
+            if limit is None:
+                sql += " LIMIT -1"
+            sql += " OFFSET ?"
+            parameters.append(offset)
         return [self._row_to_event(row) for row in self.connection.execute(sql, parameters)]
 
     @staticmethod
@@ -340,6 +348,14 @@ class TimelineStore:
 
     def count(self) -> int:
         return int(self.connection.execute("SELECT COUNT(*) FROM events").fetchone()[0])
+
+    def case_ids(self) -> List[str]:
+        """Return distinct, non-empty case identifiers for UI scoping."""
+        rows = self.connection.execute(
+            "SELECT DISTINCT case_id FROM events "
+            "WHERE case_id IS NOT NULL AND trim(case_id) != '' ORDER BY case_id COLLATE NOCASE"
+        ).fetchall()
+        return [str(row[0]) for row in rows]
 
     def close(self) -> None:
         self.connection.close()

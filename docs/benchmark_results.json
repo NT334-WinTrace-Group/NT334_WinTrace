@@ -1,0 +1,46 @@
+{
+  "benchmark": "WinTrace SQLite ingest and query",
+  "fixture": "Deterministic synthetic rows only; not CASE01 evidence",
+  "environment": {
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "sqlite": "3.49.1",
+    "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel"
+  },
+  "repeats_per_query": 7,
+  "measurements": [
+    {
+      "events_requested": 692,
+      "events_inserted": 692,
+      "database_bytes": 512000,
+      "insert_seconds": 0.205046,
+      "queries_median_seconds": {
+        "case_filter": 0.002437,
+        "artifact_and_keyword": 0.002283,
+        "full_timeline": 0.002427
+      }
+    },
+    {
+      "events_requested": 6920,
+      "events_inserted": 6920,
+      "database_bytes": 4825088,
+      "insert_seconds": 1.716492,
+      "queries_median_seconds": {
+        "case_filter": 0.005949,
+        "artifact_and_keyword": 0.005457,
+        "full_timeline": 0.004309
+      }
+    },
+    {
+      "events_requested": 27680,
+      "events_inserted": 27680,
+      "database_bytes": 19189760,
+      "insert_seconds": 21.422707,
+      "queries_median_seconds": {
+        "case_filter": 0.029848,
+        "artifact_and_keyword": 0.033068,
+        "full_timeline": 0.02198
+      }
+    }
+  ]
+}
