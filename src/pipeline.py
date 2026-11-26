@@ -33,6 +33,20 @@ class PipelineInputError(ValueError):
     """Raised when an input file cannot produce a complete valid event set."""
 
 
+def reject_input_overwrite(inputs, outputs):
+    """Never let an output replace the evidence file it was read from."""
+    for output in outputs:
+        for source in inputs:
+            if not output or not source:
+                continue
+            output_path, source_path = Path(output), Path(source)
+            same = output_path.resolve() == source_path.resolve()
+            if not same and output_path.exists() and source_path.exists():
+                same = output_path.samefile(source_path)
+            if same:
+                raise PipelineInputError(f"Output would overwrite the input file: {source}")
+
+
 def print_banner():
     banner = """
 ============================================================
@@ -84,6 +98,10 @@ def run_pipeline(
         if len(output_paths) != len(set(output_paths)):
             raise PipelineInputError("Case output files must have distinct names.")
 
+    reject_input_overwrite(
+        (input_file, shellbags_file),
+        (output_file, database_file, findings_file, error_log),
+    )
     print_banner()
     print(f"[*] Loading and normalizing {source_label or 'event'} CSV from: {input_file}")
 

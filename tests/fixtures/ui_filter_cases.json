@@ -1,0 +1,40 @@
+[
+  {
+    "name": "C1 network share window, two artifacts",
+    "filters": {
+      "case_id": "CASE01",
+      "start_text": "2015-03-23 20:24:15",
+      "end_text": "2015-03-23 20:26:53",
+      "path": "\\\\10.11.11.128\\secured_drive\\Secret Project Data\\pricing decision",
+      "artifacts": ["ShellBags", "JumpLists"]
+    },
+    "expected_ids": ["CASE01-SB0133", "CASE01-SB0141", "CASE01-JL0010", "CASE01-JL0022"]
+  },
+  {
+    "name": "Forward slashes find the same UNC path",
+    "filters": {
+      "start_text": "2015-03-23T20:26:53Z",
+      "end_text": "2015-03-23T20:26:53Z",
+      "path": "//10.11.11.128/secured_drive/Secret Project Data/pricing decision",
+      "artifacts": ["JumpLists"]
+    },
+    "expected_ids": ["CASE01-JL0010", "CASE01-JL0022"]
+  },
+  {
+    "name": "Keyword by source record, verified only",
+    "filters": {
+      "keyword": "Deduplicated.csv:L106 ",
+      "artifacts": ["ShellBags"],
+      "validation_status": "verified"
+    },
+    "expected_ids": ["CASE01-SB0133", "CASE01-SB0158", "CASE01-SB0159"]
+  },
+  {
+    "name": "Contradictory filters return nothing",
+    "filters": {
+      "keyword": "CASE01-SB0133",
+      "artifacts": ["Prefetch"]
+    },
+    "expected_ids": []
+  }
+]

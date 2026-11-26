@@ -316,3 +316,13 @@ def test_storage_migrates_legacy_database_and_recovers_provenance_on_reimport(tm
         restored, = store.query()
         for field, value in expected.items():
             assert getattr(restored, field) == value
+
+
+def test_query_keeps_positional_parameter_order(tmp_path):
+    with TimelineStore(str(tmp_path / "timeline.db")) as store:
+        store.insert_events([make_event("E1"), make_event("E2", "2026-10-25T02:11:00+00:00")])
+        # start, end, artifact, keyword, case_id, limit, offset, path, validation_status
+        (event,) = store.query(None, None, "EVTX", "report", None, 1, 1, "Alice", None)
+        assert event.event_id == "E2"
+        with pytest.raises(TypeError):
+            store.query(None, None, None, None, None, None, 0, None, None, ["EVTX"])

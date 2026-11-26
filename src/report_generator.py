@@ -3,13 +3,14 @@ WinTrace - Report Generation Module
 Author: Quyen (Validation & Visualization Engineer)
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from html import escape
 import csv
 import io
 import json
 from typing import List, Dict, Any, Optional
 from src.schema import ForensicEvent
+from src.ui_findings import review_status
 
 class ReportGenerator:
     @staticmethod
@@ -53,7 +54,7 @@ class ReportGenerator:
     def generate_html_report(events: List[ForensicEvent], findings: List[Dict[str, Any]],
                              case_id: Optional[str] = None,
                              validation_report: Optional[Dict[str, Any]] = None) -> str:
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         case_ids = sorted({event.case_id for event in events if event.case_id})
         if case_ids and any(not event.case_id for event in events):
             case_ids.append("Unspecified")
@@ -100,7 +101,7 @@ class ReportGenerator:
         <body>
             <h1>WinTrace Investigation Report</h1>
             <p><strong>Case ID:</strong> {case_label}</p>
-            <p><strong>Generated on (local time):</strong> {now_str}</p>
+            <p><strong>Generated on (UTC):</strong> {now_str}</p>
             <p><strong>Interpretation:</strong> Findings below are candidates for review, not verified conclusions.</p>
             
             <h2>1. Executive Summary</h2>
@@ -109,6 +110,7 @@ class ReportGenerator:
                 <li>Candidate Findings Requiring Review: {len(findings)}</li>
                 <li><span class="high-conf">High Confidence Candidates: {len(high_conf_findings)}</span></li>
             </ul>
+            <p>Confidence ranks findings for review; it does not validate them.</p>
 
             <h2>2. Cross-Validation H1–H4</h2>
             {validation_html}
@@ -118,6 +120,7 @@ class ReportGenerator:
                 <tr>
                     <th>Candidate Type</th>
                     <th>Finding ID</th>
+                    <th>Review Status</th>
                     <th>Case ID</th>
                     <th>Event IDs</th>
                     <th>Evidence References</th>
@@ -143,6 +146,7 @@ class ReportGenerator:
                 <tr>
                     <td>{escape(str(f.get('candidate_type', 'Automated candidate')))}</td>
                     <td>{escape(str(f.get('finding_id')))}</td>
+                    <td>{escape(review_status(f))}</td>
                     <td>{escape(str(f.get('case_id') or case_id or 'Unspecified'))}</td>
                     <td>{escape(', '.join(str(value) for value in event_ids))}</td>
                     <td>{escape('; '.join(str(value) for value in evidence_references))}</td>

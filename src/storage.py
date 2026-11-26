@@ -7,24 +7,58 @@ import hashlib
 import json
 import sqlite3
 from pathlib import Path
-from dataclasses import replace
-from typing import Any, Iterable, List, Optional
+from dataclasses import fields, replace
+from typing import Any, Iterable, List, Optional, Sequence, Tuple
 
 from src.schema import ForensicEvent
 
 
 PROVENANCE_FIELDS = ("timestamp_type", "evidence_reference", "validation_status", "case_id")
 
+NULLABLE_COLUMNS = {"user_sid", "username", *PROVENANCE_FIELDS}
+
+# Filter value selecting rows whose case_id / validation_status was never recorded.
+NOT_RECORDED = "<not recorded>"
+
+
+class MalformedEventError(ValueError):
+    """Raised when a stored row cannot be turned into a valid event."""
+
 
 class TimelineStore:
     """Stores normalized events without discarding provenance metadata."""
 
-    def __init__(self, database_path: str):
+    def __init__(self, database_path: str, read_only: bool = False):
         self.database_path = database_path
+        if read_only:
+            self._open_read_only()
+            return
         Path(database_path).parent.mkdir(parents=True, exist_ok=True)
         self.connection = sqlite3.connect(database_path)
         self.connection.row_factory = sqlite3.Row
         self.initialize()
+
+    def _open_read_only(self) -> None:
+        """Open an existing v2 database without creating, migrating, or writing it."""
+        path = Path(self.database_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"Timeline database not found: {self.database_path}")
+        self.connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        self.connection.row_factory = sqlite3.Row
+        try:
+            columns = {
+                row["name"] for row in self.connection.execute("PRAGMA table_info(events)")
+            }
+            required = {"id", *(field.name for field in fields(ForensicEvent))}
+            missing = sorted(required - columns)
+            if missing:
+                raise ValueError(
+                    "Not a WinTrace schema v2 timeline database; missing columns: "
+                    + ", ".join(missing)
+                )
+        except Exception:
+            self.connection.close()
+            raise
 
     def initialize(self) -> None:
         with self.connection:
@@ -324,18 +358,17 @@ class TimelineStore:
                 """, provenance_rows)
         return inserted
 
-    def query(
+    def _where(
         self,
         start: Optional[datetime] = None,
         end: Optional[datetime] = None,
         artifact: Optional[str] = None,
         keyword: Optional[str] = None,
         case_id: Optional[str] = None,
-        limit: Optional[int] = None,
-        offset: int = 0,
         path: Optional[str] = None,
         validation_status: Optional[str] = None,
-    ) -> List[ForensicEvent]:
+        artifacts: Optional[Sequence[str]] = None,
+    ) -> Tuple[str, List[Any]]:
         clauses: List[str] = []
         parameters: List[Any] = []
         start_utc = self._utc_bound(start, "start")
@@ -351,6 +384,10 @@ class TimelineStore:
         if artifact:
             clauses.append("artifact_source = ? COLLATE NOCASE")
             parameters.append(artifact)
+        if artifacts:
+            placeholders = ", ".join("?" for _ in artifacts)
+            clauses.append(f"artifact_source COLLATE NOCASE IN ({placeholders})")
+            parameters.extend(artifacts)
         if keyword:
             clauses.append(
                 "(target_path COLLATE NOCASE LIKE ? ESCAPE '\\' "
@@ -364,29 +401,96 @@ class TimelineStore:
         if path:
             clauses.append("target_path COLLATE NOCASE LIKE ? ESCAPE '\\'")
             parameters.append(self._contains_pattern(path))
-        if case_id:
-            clauses.append("case_id = ? COLLATE NOCASE")
-            parameters.append(case_id)
-        if validation_status:
-            clauses.append("validation_status = ? COLLATE NOCASE")
-            parameters.append(validation_status)
-        sql = "SELECT * FROM events"
-        if clauses:
-            sql += " WHERE " + " AND ".join(clauses)
-        sql += " ORDER BY timestamp, id"
-        if limit is not None:
-            if limit < 1:
-                raise ValueError("limit must be positive")
-            sql += " LIMIT ?"
-            parameters.append(limit)
+        for column, value in (
+            ("case_id", case_id),
+            ("validation_status", validation_status),
+        ):
+            if value == NOT_RECORDED:
+                clauses.append(f"({column} IS NULL OR {column} = '')")
+            elif value:
+                clauses.append(f"{column} = ? COLLATE NOCASE")
+                parameters.append(value)
+        return (" WHERE " + " AND ".join(clauses) if clauses else ""), parameters
+
+    def query(
+        self,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
+        artifact: Optional[str] = None,
+        keyword: Optional[str] = None,
+        case_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        path: Optional[str] = None,
+        validation_status: Optional[str] = None,
+        *,
+        artifacts: Optional[Sequence[str]] = None,
+        malformed: Optional[List[str]] = None,
+    ) -> List[ForensicEvent]:
+        """Return matching events in time order.
+
+        Positional parameters keep the order used on ``dev``; newer options are
+        keyword-only. A row that cannot be read raises MalformedEventError,
+        unless a ``malformed`` list is given to collect the messages instead.
+        """
+        where, parameters = self._where(
+            start=start, end=end, artifact=artifact, keyword=keyword,
+            case_id=case_id, path=path, validation_status=validation_status,
+            artifacts=artifacts,
+        )
+        if limit is not None and limit < 1:
+            raise ValueError("limit must be positive")
         if offset < 0:
             raise ValueError("offset must be non-negative")
-        if offset:
-            if limit is None:
-                sql += " LIMIT -1"
-            sql += " OFFSET ?"
-            parameters.append(offset)
-        return [self._row_to_event(row) for row in self.connection.execute(sql, parameters)]
+        sql = "SELECT * FROM events" + where + " ORDER BY timestamp, id"
+        if limit is not None or offset:
+            sql += " LIMIT ? OFFSET ?"
+            parameters.extend([-1 if limit is None else limit, offset])
+        return self._read_events(self.connection.execute(sql, parameters), malformed)
+
+    def _read_events(
+        self, rows: Iterable[sqlite3.Row], malformed: Optional[List[str]] = None
+    ) -> List[ForensicEvent]:
+        events = []
+        for row in rows:
+            try:
+                events.append(self._row_to_event(row))
+            except MalformedEventError as exc:
+                if malformed is None:
+                    raise
+                malformed.append(str(exc))
+        return events
+
+    def events_by_id(
+        self, event_ids: Sequence[str], malformed: Optional[List[str]] = None
+    ) -> List[ForensicEvent]:
+        """Return every stored event with one of these IDs, in any case."""
+        events: List[ForensicEvent] = []
+        for start in range(0, len(event_ids), 500):
+            chunk = list(event_ids[start:start + 500])
+            placeholders = ", ".join("?" for _ in chunk)
+            rows = self.connection.execute(
+                f"SELECT * FROM events WHERE event_id IN ({placeholders}) ORDER BY timestamp, id",
+                chunk,
+            )
+            events.extend(self._read_events(rows, malformed))
+        return events
+
+    def count_matching(self, **filters: Any) -> int:
+        """Count every row the same filters would return from query()."""
+        where, parameters = self._where(**filters)
+        return int(
+            self.connection.execute("SELECT COUNT(*) FROM events" + where, parameters).fetchone()[0]
+        )
+
+    def distinct_values(self, column: str) -> List[Optional[str]]:
+        """Return sorted distinct values; missing values are reported as None."""
+        if column not in {"case_id", "artifact_source", "validation_status"}:
+            raise ValueError(f"Unsupported column: {column!r}")
+        rows = self.connection.execute(f"SELECT DISTINCT {column} FROM events")
+        # Non-text values belong to malformed rows and cannot be offered as filters.
+        values = {row[0] or None for row in rows if row[0] is None or isinstance(row[0], str)}
+        return sorted(values, key=lambda value: (value is None, value or ""))
 
     @staticmethod
     def _utc_bound(value: Optional[datetime], name: str) -> Optional[str]:
@@ -406,11 +510,25 @@ class TimelineStore:
     @staticmethod
     def _row_to_event(row: sqlite3.Row) -> ForensicEvent:
         data = dict(row)
-        data["extra_attributes"] = json.loads(data["extra_attributes"])
-        for field in PROVENANCE_FIELDS:
-            if data[field] is None:
-                data[field] = data["extra_attributes"].get(field)
-        return ForensicEvent.from_dict(data)
+        try:
+            for field in fields(ForensicEvent):
+                value = data[field.name]
+                if value is None and field.name not in NULLABLE_COLUMNS:
+                    raise ValueError(f"{field.name} is missing")
+                if value is not None and not isinstance(value, str):
+                    raise ValueError(f"{field.name} is not text")
+            data["extra_attributes"] = json.loads(data["extra_attributes"])
+            if not isinstance(data["extra_attributes"], dict):
+                raise ValueError("extra_attributes is not a JSON object")
+            for name in PROVENANCE_FIELDS:
+                if data[name] is None:
+                    data[name] = data["extra_attributes"].get(name)
+            return ForensicEvent.from_dict(data)
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise MalformedEventError(
+                f"Event {data.get('event_id')!r} (database row {data.get('id')}) "
+                f"cannot be read: {exc}"
+            ) from exc
 
     def count(self) -> int:
         return int(self.connection.execute("SELECT COUNT(*) FROM events").fetchone()[0])
