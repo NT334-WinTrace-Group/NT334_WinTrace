@@ -27,7 +27,9 @@ preserved.
 - `TimelineStore(path, read_only=True)` never creates, migrates, or writes the
   database. A missing file raises `FileNotFoundError`; a non-v2 schema raises
   `ValueError`.
-- `query()` also accepts `artifacts` (any of several sources) and `offset`.
+- `query()` keeps its positional order (`..., case_id, limit, offset, path,
+  validation_status`); `artifacts` (any of several sources) and `malformed`
+  are keyword-only.
   `count_matching()` takes the same filters and returns the full row count.
 - `distinct_values()` lists stored cases, artifacts, or validation statuses.
 - `events_by_id()` returns every stored event with the given IDs, in any case;

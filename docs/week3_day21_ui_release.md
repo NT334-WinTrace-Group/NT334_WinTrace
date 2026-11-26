@@ -31,7 +31,7 @@ Mở http://localhost:8501.
 | 20 | Cô lập event hỏng, smoke test, sửa lệnh chạy trong README |
 | 21 | Pipeline từ chối ghi đè file input; cảnh báo status lạ; HTML report có Review Status và giờ UTC |
 
-Module dùng chung bị sửa: `src/storage.py` (thêm API đọc; `query()` báo `MalformedEventError` với dòng hỏng), `src/pipeline.py` (chặn ghi đè), `src/report_generator.py`, `requirements.txt` (`streamlit>=1.50.0`). Không thêm bảng hay cột SQLite.
+Module dùng chung bị sửa: `src/storage.py` (giữ thứ tự tham số `query()` của `dev`, tham số mới chỉ nhận theo tên; thêm API đọc; `query()` báo `MalformedEventError` với dòng hỏng), `src/pipeline.py` (chặn ghi đè), `src/report_generator.py`, `requirements.txt` (`streamlit>=1.50.0`). Không thêm bảng hay cột SQLite.
 
 ## Kết quả freeze
 
@@ -39,7 +39,7 @@ Module dùng chung bị sửa: `src/storage.py` (thêm API đọc; `query()` bá
 - Phiên UI đầy đủ không đổi byte nào của DB và findings JSON.
 - DB cũ thiếu cột: UI từ chối và không sửa; mở bằng `TimelineStore` để migrate rồi dùng được.
 - Pipeline không ghi đè CSV input, kể cả qua hard link.
-- Chạy trên dữ liệu CASE01: 692 event, 6.192 candidate.
+- Chạy trên dữ liệu CASE01 tại commit `0f276d8`: 692 event, 6.192 candidate.
 
 ## Giới hạn đã biết
 
@@ -49,7 +49,7 @@ Module dùng chung bị sửa: `src/storage.py` (thêm API đọc; `query()` bá
 4. Kết quả duyệt C1/C2/C5 nằm ở CSV riêng, chưa được ghi vào finding.
 5. Filter path chỉ tìm `target_path`; không quy đổi alias ổ đĩa (ví dụ `V:`). Keyword tiếng Việt có dấu phân biệt hoa thường.
 6. Status hoặc confidence lạ trong DB bị `ForensicEvent` đổi thành `unverified` / `MEDIUM`; UI chỉ cảnh báo status.
-7. HTML report chỉ có 50 event đầu nhưng liệt kê mọi finding đã chọn. CSV không có manifest.
+7. HTML report gồm mọi event khớp filter và mọi finding đã chọn (PR 19 bỏ giới hạn 50 event), nên có thể rất lớn. CSV không có manifest.
 8. Export giữ `username`, path, mô tả và reference; cần xem lại trước khi công khai.
 9. Chưa có biểu đồ timeline. Chưa benchmark DB lớn; mọi finding và event được trích dẫn được nạp vào RAM.
 10. UI nhãn tiếng Anh, caveat của artifact giữ tiếng Việt.

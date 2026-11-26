@@ -9,7 +9,7 @@ Code: `src/ui_export.py`. Test: `tests/test_ui_export.py`.
 | Timeline CSV / JSON | Mọi event khớp filter ở sidebar, không chỉ trang đang xem |
 | Findings CSV | Finding khớp filter ở tab Correlation findings |
 | Findings JSON | Như trên, kèm `source_events` để mọi `event_ids` tra được ngay trong file |
-| HTML | Báo cáo cũ (`ReportGenerator`): 50 event đầu và finding hợp lệ đang chọn |
+| HTML | `ReportGenerator`: mọi event khớp filter và finding hợp lệ đang chọn |
 
 JSON có `export_version`, thời điểm xuất UTC, filter đã dùng, tên và SHA-256 của DB/JSON nguồn, `record_count` và `excluded_records`. Không ghi đường dẫn thư mục. CSV không có phần này, nên dùng JSON khi cần kiểm chứng.
 

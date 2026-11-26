@@ -420,16 +420,18 @@ class TimelineStore:
         keyword: Optional[str] = None,
         case_id: Optional[str] = None,
         limit: Optional[int] = None,
+        offset: int = 0,
         path: Optional[str] = None,
         validation_status: Optional[str] = None,
+        *,
         artifacts: Optional[Sequence[str]] = None,
-        offset: int = 0,
         malformed: Optional[List[str]] = None,
     ) -> List[ForensicEvent]:
         """Return matching events in time order.
 
-        A row that cannot be read raises MalformedEventError, unless a
-        ``malformed`` list is given to collect the messages instead.
+        Positional parameters keep the order used on ``dev``; newer options are
+        keyword-only. A row that cannot be read raises MalformedEventError,
+        unless a ``malformed`` list is given to collect the messages instead.
         """
         where, parameters = self._where(
             start=start, end=end, artifact=artifact, keyword=keyword,
