@@ -567,7 +567,6 @@ def render_event_export(database, filters, findings, skip_invalid, stamp):
             for item in attribution.get(key, []):
                 item.pop("deletion_sid", None)
                 item.pop("prior_sid", None)    
-
     available_events = {
         (event.case_id, event.event_id)
         for event in events
