@@ -19,6 +19,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src import ui_data, ui_evidence, ui_export, ui_findings
 from src.report_generator import ReportGenerator
+from src.cross_validation import CrossValidator
+from src.ui_manual_review import (
+    render_manual_review,
+    manual_findings_for_export,
+)
 from src.schema import VALID_VALIDATION_STATUSES
 
 DEFAULT_DATABASE = "results/CASE01/timeline.db"
@@ -547,9 +552,47 @@ def render_event_export(database, filters, findings, skip_invalid, stamp):
         ui_export.events_to_json(events, filters, [source], excluded),
         f"{base}.json", "application/json",
     )
+    validation_report = None
+
+    case_ids = {event.case_id for event in events}
+
+    if len(case_ids) == 1 and None not in case_ids and "" not in case_ids:
+        validation_report = CrossValidator(events).run_all_checks()
+        validation_report["scope"] = "Exported timeline events only"
+
+        # Remove SID values from the UI export.
+        attribution = validation_report["checks"]["user_attribution"]
+
+        for key in ("details", "unresolved", "contradictions"):
+            for item in attribution.get(key, []):
+                item.pop("deletion_sid", None)
+                item.pop("prior_sid", None)    
+
+    available_events = {
+        (event.case_id, event.event_id)
+        for event in events
+    }
+
+    scoped_findings = [
+        finding
+        for finding in findings
+        if ui_findings.event_ids(finding)
+        and all(
+            (finding.get("case_id"), event_id)
+            in available_events
+            for event_id in ui_findings.event_ids(finding)
+        )
+    ]
+
     download(
-        "Download HTML report", ReportGenerator.generate_html_report(events, findings),
-        f"{base}.html", "text/html",
+        "Download HTML report",
+        ReportGenerator.generate_html_report(
+            events,
+            scoped_findings + manual_findings_for_export(events),
+            validation_report=validation_report,
+        ),
+        f"{base}.html",
+        "text/html",
     )
 
 
@@ -612,7 +655,75 @@ def render_reporting(database, filters, findings_path, findings, index, descript
         render_event_export(database, filters, valid_findings, skip_invalid, stamp)
     except (sqlite3.Error, ValueError, OSError) as exc:
         st.error(f"Cannot prepare the export: {exc}")
+def render_cross_validation(database, filters):
+    st.subheader("Cross-validation H1-H4")
 
+    if filters is None:
+        st.info("Correct the sidebar filters first.")
+        return
+
+    case_id = filters.get("case_id")
+
+    if not case_id or case_id == ui_data.NOT_RECORDED:
+        st.info("Select one named case to run cross-validation.")
+        return
+
+    st.caption(
+        f"Case: {case_id} | Scope: full case, "
+        "independent of timeline filters."
+    )
+
+    try:
+        events = ui_data.load_matching(
+            database, {"case_id": case_id}
+        )
+
+        if not events:
+            st.info("No events available for validation.")
+            return
+
+        report = CrossValidator(events).run_all_checks()
+
+    except (sqlite3.Error, ValueError, OSError) as exc:
+        st.error(f"Cannot run cross-validation: {exc}")
+        return
+
+    st.markdown(
+        f"**Overall status:** {report['summary_status']}"
+    )
+
+    st.markdown(
+        f"Events checked: **{report['total_events_checked']}**"
+    )
+
+    st.info(report["verification_note"])
+
+    for name, check in report["checks"].items():
+        st.markdown(
+            f"**{check['hypothesis']}**: {check['status']}"
+        )
+
+        st.write("Matched pairs:", check["matches_count"])
+
+        counts = {
+            key: value
+            for key, value in check.items()
+            if key.endswith("_count") or key.endswith("_pairs")
+        }
+
+        st.json(counts)
+
+        with st.expander(f"Evidence details - {name}"):
+            st.json({
+                "details": check.get("details", []),
+                "temporal_anomalies": check.get(
+                    "temporal_anomalies", []
+                ),
+                "unresolved": check.get("unresolved", []),
+                "contradictions": check.get(
+                    "contradictions", []
+                ),
+            })
 
 def main():
     st.html(STYLE)
@@ -635,17 +746,77 @@ def main():
             + ", ".join(f"`{value}`" for value in unknown)
         )
     filters = sidebar_filters(summary)
+    if ui_data.has_plaso_export_events(database):
+
+        st.subheader("Plaso Extended Timeline")
+
+        st.caption(
+            "Extended artifact-based timeline. All times are UTC."
+        )
+
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric(
+            "Total events",
+            f"{summary.total:,}"
+        )
+
+        col2.metric(
+            "Artifact groups",
+            len(summary.artifacts)
+        )
+
+        col3.metric(
+            "Dataset",
+            "Plaso"
+        )
+
+        st.info(
+            "Extended timeline browsing mode. "
+            "Canonical findings, manual review, "
+            "cross-validation and reporting are disabled "
+            "for this dataset."
+        )
+
+        st.warning(
+            "Registry extraction coverage may be incomplete. "
+            "Unverified events do not establish user actions."
+        )
+
+        render_timeline(database, filters, summary)
+
+        return
     findings, index, findings_note = load_findings(database, findings_path, filters, summary)
 
-    timeline_tab, findings_tab, report_tab = st.tabs(
-        ["Timeline", "Correlation findings", "Reporting"]
+    timeline_tab, findings_tab, validation_tab, manual_tab, report_tab = st.tabs(
+        [
+            "Timeline",
+            "Correlation findings",
+            "Cross-validation",
+            "Manual Review",
+            "Reporting",
+        ]
     )
+
     with timeline_tab:
         render_timeline(database, filters, summary)
+
     with findings_tab:
-        selected, description = render_findings(findings, index, findings_note)
+        selected, description = render_findings(
+            findings, index, findings_note
+        )
+
+    with validation_tab:
+        render_cross_validation(database, filters)
+
+    with manual_tab:
+        render_manual_review(database, filters)
+
     with report_tab:
-        render_reporting(database, filters, findings_path, selected, index, description)
+        render_reporting(
+            database, filters, findings_path,
+            selected, index, description
+        )
 
 
 if __name__ == "__main__":

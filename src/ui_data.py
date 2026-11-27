@@ -11,8 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from src.schema import ForensicEvent, normalize_windows_path
 from src.storage import NOT_RECORDED, TimelineStore
-from src.ui_evidence import evidence_basis
-
+from src.ui_evidence import evidence_basis, source_records
 TIMELINE_COLUMNS = [
     "Event ID",
     "Timestamp (UTC)",
@@ -104,7 +103,19 @@ class TimelinePage:
     last: int
     malformed: List[str]
 
+def has_plaso_export_events(database_path: str) -> bool:
+    """Detect events produced by the Plaso export adapter."""
 
+    with TimelineStore(database_path, read_only=True) as store:
+
+        row = store.connection.execute("""
+            SELECT 1
+            FROM events
+            WHERE event_id LIKE '%-PLASO-%'
+            LIMIT 1
+        """).fetchone()
+
+        return row is not None
 def load_summary(database_path: str) -> DatabaseSummary:
     with TimelineStore(database_path, read_only=True) as store:
         return DatabaseSummary(
@@ -182,8 +193,11 @@ def timeline_row(event: ForensicEvent) -> Dict[str, str]:
         "Path": event.target_path or "Not recorded",
         "Description": event.message,
         "Source file": event.source_file or "Not recorded",
-        "Source record": str(extra.get("source_line") or "Not recorded"),
-        "Data source": str(extra.get("source_label") or event.parser),
+        "Source record": (
+    str(extra.get("source_line"))
+    if extra.get("source_line")
+    else ", ".join(source_records(event)) or "Not recorded"
+),        "Data source": str(extra.get("source_label") or event.parser),
         "Case": event.case_id or "Unspecified",
     }
 

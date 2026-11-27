@@ -3,14 +3,13 @@ WinTrace - Plaso Data Normalization Module (v2)
 Transforms raw Plaso output (CSV / JSON Lines) into standardized ForensicEvent records
 matching docs/event_schema.md.
 """
-
+from src.plaso_adapter import normalize_plaso_export_record
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 import csv
 import json
 import re
-
 from src.schema import (
     VALID_ARTIFACTS,
     ForensicEvent,
@@ -161,6 +160,25 @@ class PlasoNormalizer:
     @classmethod
     def normalize_record(cls, raw_row: Dict[str, str], index: int,
                          case_id: Optional[str] = None) -> ForensicEvent:
+
+        if (
+            raw_row.get("source_record")
+            and not raw_row.get("event_id")
+            and all(
+                field in raw_row
+                for field in (
+                    "datetime",
+                    "data_type",
+                    "timestamp_desc",
+                    "parser",
+                    "display_name",
+                )
+            )
+        ):
+            return normalize_plaso_export_record(
+                raw_row, case_id=case_id
+            )
+
         event_id = raw_row.get("event_id") or f"EVT-{index:04d}"
 
         raw_time = (
@@ -169,6 +187,7 @@ class PlasoNormalizer:
             or raw_row.get("timestamp_utc")
             or ""
         )
+
         try:
             dt = parse_iso_utc(raw_time)
         except ValueError as exc:

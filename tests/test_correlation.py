@@ -151,7 +151,17 @@ class TestCorrelation(unittest.TestCase):
                 case_id=case_id,
             ),
         ]
+    def test_automated_finding_remains_unverified(self):
+        events = self._case_pair("CASE01", "A")
 
+        for event in events:
+            event.validation_status = "verified"
+
+        findings = CorrelationEngine().correlate(events)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].confidence_level, "HIGH")
+        self.assertEqual(findings[0].validation_status, "unverified")
     def test_finding_ids_are_case_scoped_and_stable(self):
         engine = CorrelationEngine()
         events_a = self._case_pair("CASE01", "A")

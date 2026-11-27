@@ -374,6 +374,7 @@ class CorrelationEngine:
                     event_ids=[event_a.event_id, event_b.event_id],
                     investigation_note=" | ".join(investigation_notes) if investigation_notes else None,
                     evidence_references=evidence_refs,
+                    validation_status="unverified",
                     case_id=case_id,
                 ))
 
@@ -394,7 +395,7 @@ class CorrelationEngine:
             "finding_id", "case_id", "event_a_id", "event_b_id", "event_ids",
             "time_delta_minutes", "matched_rules", "confidence_score",
             "confidence_level", "event_a_desc", "event_b_desc",
-            "explanation", "investigation_note", "evidence_references",
+            "explanation", "investigation_note", "evidence_references", "validation_status",
         ]
         with open(output_path, "w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)

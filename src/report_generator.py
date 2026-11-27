@@ -68,6 +68,15 @@ class ReportGenerator:
                 f"<p><strong>Summary:</strong> {escape(str(validation_report.get('summary_status', 'Unknown')))}. "
                 "This status is not ground-truth verification.</p>"
             )
+
+            validation_html += (
+                f"<p><strong>Validation scope:</strong> "
+                f"{escape(str(validation_report.get('scope', 'Supplied case events')))}</p>"
+                f"<p><strong>Events checked:</strong> "
+                f"{escape(str(validation_report.get('total_events_checked', 0)))}</p>"
+                "<p>Results apply only to the supplied events. "
+                "Missing evidence may reflect the selected scope.</p>"
+            )
             for name, check in validation_report.get("checks", {}).items():
                 details = escape(json.dumps({
                     "details": check.get("details", []),

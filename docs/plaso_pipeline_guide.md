@@ -178,3 +178,18 @@ Lưu ý về provenance: `results/plaso_raw_output_real.*` là output
 được dùng output đó để kết luận đã chạy Plaso trên CASE01. CASE01 hiện được
 import từ artifact output thực tế, ví dụ
 `analysis/phuc-artifacts/shellbags_findings.csv`, theo adapter Schema v2.
+## 7. Final Integration – CASE01
+
+Quy trình tích hợp Plaso trên raw artifacts CASE01:
+
+- Docker Plaso Runner
+- Data Quality Gate và Timestamp Quarantine
+- Plaso Adapter
+- SQLite Extended Timeline
+- Evidence Traceability
+- Cross-tool Corroboration
+- Targeted Correlation
+- Extended Timeline UI
+
+Xem hướng dẫn chi tiết tại:
+[CASE01 – Plaso Final Integration](plaso_case01_final.md)

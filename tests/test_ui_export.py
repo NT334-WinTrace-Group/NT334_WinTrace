@@ -109,7 +109,7 @@ def test_findings_round_trip_with_source_events(findings):
     assert document["records"] == expected
     references = {e["event_id"]: e["evidence_reference"] for e in document["source_events"]}
     for record in document["records"]:
-        assert record["validation_status"] is None
+        assert record["validation_status"] == "unverified"
         assert set(record["evidence_references"]) == {references[i] for i in record["event_ids"]}
 
 
