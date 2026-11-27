@@ -142,6 +142,14 @@ def render_manual_review(database, filters):
                 st.code(event.target_path, language=None)
                 st.code(event.evidence_reference or "Missing", language=None)
 
+    from src.ui_enrichment import render_enrichment
+
+    linked = [index[event_id] for event_id in dict.fromkeys(
+        split_ids(candidate.get("primary_event_ids")) +
+        split_ids(candidate.get("context_event_ids"))
+    ) if event_id in index]
+    render_enrichment(case_id, linked, candidate_id)
+
     st.markdown("**Original evidence references**")
     st.code(
         candidate.get("source_references", ""),
