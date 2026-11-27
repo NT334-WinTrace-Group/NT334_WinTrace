@@ -134,3 +134,172 @@ class PlasoRunner:
             command.extend(extra_args)
         command.append(storage_file)
         return self._run(command, log_path)
+
+class DockerPlasoRunner(PlasoRunner):
+    """Execute Plaso tools using an isolated Docker container."""
+
+    def __init__(self, image: str, docker_executable: str = "docker"):
+        super().__init__()
+
+        if "@sha256:" not in image:
+            raise ValueError("Use a pinned Plaso image digest")
+
+        self.image = image
+        self.docker_executable = docker_executable
+
+    @staticmethod
+    def _protect_log_path(log_path, protected_path):
+        if log_path is None:
+            return
+
+        log = Path(log_path).resolve()
+        protected = Path(protected_path).resolve()
+
+        if log == protected or log.is_relative_to(protected):
+            raise ValueError(
+                "Execution log must be outside protected evidence"
+            )
+    def _docker_command(self, mounts, tool, args):
+        command = [
+            self.docker_executable,
+            "run",
+            "--rm",
+            "--network", "none",
+        ]
+
+        for host_path, container_path, readonly in mounts:
+            host = Path(host_path).resolve()
+
+            if "," in str(host):
+                raise ValueError("Unsupported comma in mount path")
+
+            mount = (
+                f"type=bind,source={host},"
+                f"target={container_path}"
+            )
+
+            if readonly:
+                mount += ",readonly"
+
+            command.extend(["--mount", mount])
+
+        command.extend([self.image, tool])
+        command.extend(args)
+
+        return command
+
+    def run_log2timeline(
+        self, source, storage_file, parsers=None,
+        log_path=None, extra_args=None,
+    ):
+        source = Path(source).resolve()
+        storage = Path(storage_file).resolve()
+
+        self._protect_log_path(log_path, source)
+        self._protect_log_path(log_path, storage)
+
+        if not source.is_dir():
+            raise FileNotFoundError(source)
+
+        if storage.exists():
+            raise FileExistsError(storage)
+
+        if storage.is_relative_to(source):
+            raise ValueError("Output must be outside evidence directory")
+
+        if source.is_relative_to(storage.parent):
+            raise ValueError("Output mount must not contain evidence")
+
+        storage.parent.mkdir(parents=True, exist_ok=True)
+
+        mounts = [
+            (source, "/evidence", True),
+            (storage.parent, "/output", False),
+        ]
+
+        args = [
+            "--status_view", "none",
+            "--storage-file", f"/output/{storage.name}",
+        ]
+
+        if parsers:
+            args.extend(["--parsers", parsers])
+
+        if extra_args:
+            args.extend(extra_args)
+
+        args.append("/evidence")
+
+        command = self._docker_command(
+            mounts, "log2timeline", args
+        )
+
+        return self._run(command, log_path)
+
+    def run_pinfo(
+        self, storage_file, log_path=None, verbose=False
+    ):
+        storage = Path(storage_file).resolve()
+
+        self._protect_log_path(log_path, storage)
+
+        if not storage.is_file():
+            raise FileNotFoundError(storage)
+
+        mounts = [
+            (storage, "/input/case.plaso", True),
+        ]
+
+        args = ["-v"] if verbose else []
+        args.append("/input/case.plaso")
+
+        command = self._docker_command(
+            mounts, "pinfo", args
+        )
+
+        return self._run(command, log_path)
+
+    def run_psort(
+        self, storage_file, output_file,
+        output_format="dynamic",
+        log_path=None, extra_args=None,
+    ):
+
+        storage = Path(storage_file).resolve()
+        output = Path(output_file).resolve()
+
+        self._protect_log_path(log_path, storage)
+        self._protect_log_path(log_path, output)
+        if not storage.is_file():
+            raise FileNotFoundError(storage)
+
+        if output.exists():
+            raise FileExistsError(output)
+
+        if storage.is_relative_to(output.parent):
+            raise ValueError(
+                "Output mount must not contain the Plaso storage"
+            )
+
+        output.parent.mkdir(parents=True, exist_ok=True)
+
+        mounts = [
+            (storage, "/input/case.plaso", True),
+            (output.parent, "/output", False),
+        ]
+
+        args = [
+            "-o", output_format,
+            "-w", f"/output/{output.name}",
+        ]
+
+        if extra_args:
+            args.extend(extra_args)
+
+        args.append("/input/case.plaso")
+
+        command = self._docker_command(
+            mounts, "psort", args
+        )
+
+        return self._run(command, log_path)

@@ -57,7 +57,10 @@ def test_finding_example_references_existing_events():
 def test_new_engine_finding_is_not_verified():
     findings = load_example("ui_findings.json")
     assert findings
-    assert all(f["validation_status"] is None for f in findings)
+    assert all(
+        f["validation_status"] == "unverified"
+        for f in findings
+    )
 
 
 def test_reference_text_is_not_the_validation_status():

@@ -116,7 +116,17 @@ def _as_list(value: Any) -> List[str]:
 
 def source_records(event: ForensicEvent) -> List[str]:
     extra = event.extra_attributes
-    return _as_list(extra.get("source_line")) + _as_list(extra.get("also_source_lines"))
+
+    records = _as_list(extra.get("source_line"))
+
+    if not records and extra.get("source_record") is not None:
+        records = [
+            f"record={extra['source_record']}"
+        ]
+
+    return records + _as_list(
+        extra.get("also_source_lines")
+    )
 
 
 def warnings(event: ForensicEvent) -> List[str]:

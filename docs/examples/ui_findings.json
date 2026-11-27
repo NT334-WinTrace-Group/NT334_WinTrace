@@ -24,7 +24,7 @@
       "Deduplicated.csv:L106 | hive=UsrClass.dat | BagPath=BagMRU\\8\\0\\0\\2 | Slot=1 | MRU=0 | ShellType=Directory | verified: ShellBags Explorer v2026.10.1 (CASE01-F001)",
       "AutomaticDestinations_fromF.csv:L23 | file=69bacc0499d41c4.automaticDestinations-ms | entry=1 | tool=JLECmd 2026.10.5 | input=F: read-only mount"
     ],
-    "validation_status": null,
+    "validation_status": "unverified",
     "case_id": "CASE01"
   }
 ]
